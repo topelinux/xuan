@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "lib": ["ES2022", "dom"],
+        "noImplicitAny": true
+    },
+    "typedocOptions": {
+        "name": "xuan",
+        "entryPoints": [ "src/" ],
+        "entryPointStrategy": "expand",
+        "out": "api/",
+        "readme": "intro.md",
+        "disableSources": true,
+        "exclude":["src/index.d.ts"],
+        "treatWarningsAsErrors": true
+    },
+    "watchOptions": {
+        "excludeDirectories": ["api/*"]
+    }
+}

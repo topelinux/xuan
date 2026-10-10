@@ -1,0 +1,9 @@
+# Version script to hide time64 symbols for old musl compatibility
+# Hides all __* symbols (including __time64, __clock_gettime64, etc.)
+# to avoid linking against time64 functions that don't exist on old musl (< 1.2.0)
+VERS_1.0 {
+    global:
+        *;
+    local:
+        __*;
+};

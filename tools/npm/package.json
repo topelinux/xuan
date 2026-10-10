@@ -1,0 +1,21 @@
+{
+  "name": "tjs-npm",
+  "version": "1.0.0",
+  "description": "npm CLI implementation for tjs",
+  "type": "module",
+  "main": "dist/tjs-npm.js",
+  "bin": {
+    "tjs-npm": "./dist/tjs-npm.js"
+  },
+  "scripts": {
+    "build": "node build.js",
+    "prebundle": "node build.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2"
+  },
+  "engines": {
+    "tjs": ">=1.0.0"
+  },
+  "dependencies": {}
+}

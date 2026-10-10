@@ -1,0 +1,14 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 53dff421..35c825c9 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -186,7 +186,8 @@ set(uv_sources
+     src/version.c)
+ 
+ if(WIN32)
+-  list(APPEND uv_defines WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00 _CRT_DECLARE_NONSTDC_NAMES=0)
++  # Let Zig/toolchain define _WIN32_WINNT to avoid conflicts
++  list(APPEND uv_defines WIN32_LEAN_AND_MEAN _CRT_DECLARE_NONSTDC_NAMES=0)
+   list(APPEND uv_libraries
+        psapi
+        user32

@@ -1,0 +1,6 @@
+{
+  "name": "native-test-module-pkg",
+  "version": "0.0.0-test",
+  "type": "module",
+  "main": "../../../../build/native-test"
+}

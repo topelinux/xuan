@@ -1,0 +1,474 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4b4bf8e..eb606e2 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -90,7 +90,8 @@ endmacro()
+ 
+ xcheck_add_c_compiler_flag(-Wall)
+ if(NOT MSVC AND NOT IOS AND NOT TVOS AND NOT WATCHOS)
+-    if(QJS_BUILD_WERROR)
++    # Skip Werror for Zig Windows cross-compilation.
++    if(QJS_BUILD_WERROR AND NOT CMAKE_SYSTEM_NAME STREQUAL "Windows")
+         xcheck_add_c_compiler_flag(-Werror)
+     endif()
+     xcheck_add_c_compiler_flag(-Wextra)
+@@ -277,8 +278,8 @@ if(QJS_BUILD_LIBC)
+ endif()
+ list(APPEND qjs_defines _GNU_SOURCE)
+ if(WIN32)
+-    # NB: Windows 7 is EOL and we are only supporting in so far as it doesn't interfere with progress.
+-    list(APPEND qjs_defines WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0601)
++    # Let Zig/toolchain define _WIN32_WINNT to avoid conflicts
++    list(APPEND qjs_defines WIN32_LEAN_AND_MEAN)
+ endif()
+ if(TVOS)
+     list(APPEND qjs_defines _TVOS)
+diff --git a/quickjs.c b/quickjs.c
+index 9a834a7..9301578 100644
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -4596,6 +4596,28 @@ static int string_buffer_concat(StringBuffer *s, JSString *p,
+         return string_buffer_write8(s, str8(p) + from, to - from);
+ }
+ 
++static int string_buffer_concat_primitive(StringBuffer *s, int tag,
++                                          JSValueConst v)
++{
++    char buf[32];
++    size_t len;
++
++    switch(tag) {
++    case JS_TAG_INT:
++        len = i32toa(buf, JS_VALUE_GET_INT(v));
++        return string_buffer_write8(s, (const uint8_t *)buf, len);
++    case JS_TAG_BOOL:
++        if (JS_VALUE_GET_BOOL(v))
++            return string_buffer_write8(s, (const uint8_t *)"true", 4);
++        else
++            return string_buffer_write8(s, (const uint8_t *)"false", 5);
++    case JS_TAG_NULL:
++        return string_buffer_write8(s, (const uint8_t *)"null", 4);
++    default:
++        return 1;
++    }
++}
++
+ static int string_buffer_concat_value(StringBuffer *s, JSValueConst v)
+ {
+     JSString *p;
+@@ -4616,6 +4638,9 @@ static int string_buffer_concat_value(StringBuffer *s, JSValueConst v)
+         return string_buffer_concat_value(s, r->right);
+     }
+     if (unlikely(tag != JS_TAG_STRING)) {
++        res = string_buffer_concat_primitive(s, tag, v);
++        if (res <= 0)
++            return res;
+         v1 = JS_ToString(s->ctx, v);
+         if (JS_IsException(v1))
+             return string_buffer_set_error(s);
+@@ -4647,6 +4672,11 @@ static int string_buffer_concat_value_free(StringBuffer *s, JSValue v)
+         return res;
+     }
+     if (unlikely(tag != JS_TAG_STRING)) {
++        res = string_buffer_concat_primitive(s, tag, v);
++        if (res <= 0) {
++            JS_FreeValue(s->ctx, v);
++            return res;
++        }
+         v = JS_ToStringFree(s->ctx, v);
+         if (JS_IsException(v))
+             return string_buffer_set_error(s);
+@@ -14652,6 +14682,27 @@ static JSValue JS_ToQuotedString(JSContext *ctx, JSValueConst val1)
+         return val;
+     p = JS_VALUE_GET_STRING(val);
+ 
++    if (!p->is_wide_char) {
++        const uint8_t *str;
++        str = str8(p);
++        for(i = 0; i < p->len; i++) {
++            c = str[i];
++            if (c < 32 || c == '\"' || c == '\\')
++                goto needs_escape;
++        }
++        if (string_buffer_init(ctx, b, p->len + 2))
++            goto fail;
++        if (string_buffer_putc8(b, '\"'))
++            goto fail;
++        if (string_buffer_write8(b, str, p->len))
++            goto fail;
++        if (string_buffer_putc8(b, '\"'))
++            goto fail;
++        JS_FreeValue(ctx, val);
++        return string_buffer_end(b);
++    }
++
++needs_escape:
+     if (string_buffer_init(ctx, b, p->len + 2))
+         goto fail;
+ 
+@@ -43735,9 +43786,11 @@ static JSValue js_array_pop(JSContext *ctx, JSValueConst this_val,
+             if (shift) {
+                 res = arrp[0];
+                 memmove(arrp, arrp + 1, (count32 - 1) * sizeof(*arrp));
++                arrp[count32 - 1] = JS_UNDEFINED;
+                 p->u.array.count--;
+             } else {
+                 res = arrp[count32 - 1];
++                arrp[count32 - 1] = JS_UNDEFINED;
+                 p->u.array.count--;
+             }
+         } else {
+@@ -43787,6 +43840,9 @@ static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
+             if (likely(JS_VALUE_GET_TAG(p->prop[0].u.value) == JS_TAG_INT &&
+                        (get_shape_prop(p->shape)->flags & JS_PROP_WRITABLE))) {
+                 array_len = JS_VALUE_GET_INT(p->prop[0].u.value);
++                /* Fast path only supports dense arrays without holes. */
++                if (unlikely(array_len != p->u.array.count))
++                    goto slow_path;
+                 new_len = array_len + argc;
+                 if (likely(new_len >= array_len && new_len <= (uint32_t)INT32_MAX)) { /* no overflow and within fast-array bounds */
+                     if (unlikely(new_len > p->u.array.u1.size)) {
+@@ -43803,6 +43859,7 @@ static JSValue js_array_push(JSContext *ctx, JSValueConst this_val,
+             }
+         }
+     }
++slow_path:
+ 
+     obj = JS_ToObject(ctx, this_val);
+     if (js_get_length64(ctx, &len, obj))
+@@ -50451,6 +50508,7 @@ static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr)
+     case '[':
+         {
+             JSValue el;
++            JSObject *p;
+             uint32_t idx;
+             JSONParseRecord *pr1;
+             int pr_size;
+@@ -50460,6 +50518,7 @@ static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr)
+             val = JS_NewArray(ctx);
+             if (JS_IsException(val))
+                 goto fail;
++            p = JS_VALUE_GET_OBJ(val);
+             if (pr) {
+                 json_parse_record_init_array(ctx, pr, val);
+                 pr_size = 0;
+@@ -50478,7 +50537,7 @@ static JSValue json_parse_value(JSParseState *s, JSONParseRecord *pr)
+                     el = json_parse_value(s, pr1);
+                     if (JS_IsException(el))
+                         goto fail;
+-                    ret = JS_DefinePropertyValueUint32(ctx, val, idx, el, JS_PROP_C_W_E);
++                    ret = add_fast_array_element(ctx, p, el, JS_PROP_THROW);
+                     if (ret < 0)
+                         goto fail;
+                     if (s->token.val == ']')
+@@ -50801,7 +50860,9 @@ static JSValue js_json_rawJSON(JSContext *ctx, JSValueConst this_val,
+ 
+ typedef struct JSONStringifyContext {
+     JSValueConst replacer_func;
+-    JSValue stack;
++    JSObject **stack_objs;
++    uint32_t stack_len;
++    uint32_t stack_size;
+     JSValue property_list;
+     JSValue gap;
+     JSValue empty;
+@@ -50814,6 +50875,42 @@ static JSValue JS_ToQuotedStringFree(JSContext *ctx, JSValue val) {
+     return r;
+ }
+ 
++static int js_json_stack_push(JSContext *ctx, JSONStringifyContext *jsc,
++                              JSObject *p)
++{
++    JSObject **new_tab;
++    uint32_t new_size;
++
++    if (unlikely(jsc->stack_len >= jsc->stack_size)) {
++        new_size = max_int(8, jsc->stack_size * 3 / 2);
++        new_tab = js_realloc2(ctx, jsc->stack_objs,
++                              sizeof(jsc->stack_objs[0]) * new_size, NULL);
++        if (!new_tab)
++            return -1;
++        jsc->stack_objs = new_tab;
++        jsc->stack_size = new_size;
++    }
++    jsc->stack_objs[jsc->stack_len++] = p;
++    return 0;
++}
++
++static void js_json_stack_pop(JSONStringifyContext *jsc)
++{
++    assert(jsc->stack_len > 0);
++    jsc->stack_len--;
++}
++
++static int js_json_stack_has(JSONStringifyContext *jsc, JSObject *p)
++{
++    uint32_t i;
++
++    for(i = 0; i < jsc->stack_len; i++) {
++        if (jsc->stack_objs[i] == p)
++            return 1;
++    }
++    return 0;
++}
++
+ static JSValue js_json_check(JSContext *ctx, JSONStringifyContext *jsc,
+                              JSValueConst holder, JSValue val,
+                              JSValueConst key)
+@@ -50876,16 +50973,20 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
+                           JSValueConst indent)
+ {
+     JSValue indent1, sep, sep1, tab, v, prop;
++    JSPropertyEnum *tab_atom;
+     JSObject *p;
+     int64_t i, len;
+     int cl, ret;
+     bool has_content;
++    uint32_t atom_len;
+ 
+     indent1 = JS_UNDEFINED;
+     sep = JS_UNDEFINED;
+     sep1 = JS_UNDEFINED;
+     tab = JS_UNDEFINED;
+     prop = JS_UNDEFINED;
++    tab_atom = NULL;
++    atom_len = 0;
+ 
+     if (js_check_stack_overflow(ctx->rt, 0)) {
+         JS_ThrowStackOverflow(ctx);
+@@ -50917,10 +51018,7 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
+             val = val1;
+             goto concat_value;
+         }
+-        v = js_array_includes(ctx, jsc->stack, 1, vc(&val));
+-        if (JS_IsException(v))
+-            goto exception;
+-        if (JS_ToBoolFree(ctx, v)) {
++        if (js_json_stack_has(jsc, p)) {
+             JS_ThrowTypeError(ctx, "circular reference");
+             goto exception;
+         }
+@@ -50938,8 +51036,7 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
+             sep = js_dup(jsc->empty);
+             sep1 = js_dup(jsc->empty);
+         }
+-        v = js_array_push(ctx, jsc->stack, 1, vc(&val), 0);
+-        if (check_exception_free(ctx, v))
++        if (js_json_stack_push(ctx, jsc, p))
+             goto exception;
+         ret = js_is_array(ctx, val);
+         if (ret < 0)
+@@ -50955,13 +51052,31 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
+                 v = JS_GetPropertyInt64(ctx, val, i);
+                 if (JS_IsException(v))
+                     goto exception;
+-                /* XXX: could do this string conversion only when needed */
+-                prop = JS_ToStringFree(ctx, js_int64(i));
+-                if (JS_IsException(prop))
+-                    goto exception;
+-                v = js_json_check(ctx, jsc, val, v, prop);
+-                JS_FreeValue(ctx, prop);
+-                prop = JS_UNDEFINED;
++                if (!JS_IsUndefined(jsc->replacer_func) ||
++                    JS_IsObject(v) || JS_IsBigInt(v)) {
++                    prop = JS_ToStringFree(ctx, js_int64(i));
++                    if (JS_IsException(prop)) {
++                        JS_FreeValue(ctx, v);
++                        goto exception;
++                    }
++                    v = js_json_check(ctx, jsc, val, v, prop);
++                    JS_FreeValue(ctx, prop);
++                    prop = JS_UNDEFINED;
++                } else {
++                    switch (JS_VALUE_GET_NORM_TAG(v)) {
++                    case JS_TAG_STRING:
++                    case JS_TAG_STRING_ROPE:
++                    case JS_TAG_INT:
++                    case JS_TAG_FLOAT64:
++                    case JS_TAG_BOOL:
++                    case JS_TAG_NULL:
++                        break;
++                    default:
++                        JS_FreeValue(ctx, v);
++                        v = JS_UNDEFINED;
++                        break;
++                    }
++                }
+                 if (JS_IsException(v))
+                     goto exception;
+                 if (JS_IsUndefined(v))
+@@ -50975,25 +51090,39 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
+             }
+             string_buffer_putc8(jsc->b, ']');
+         } else {
+-            if (!JS_IsUndefined(jsc->property_list))
++            if (!JS_IsUndefined(jsc->property_list)) {
+                 tab = js_dup(jsc->property_list);
+-            else
+-                tab = js_object_keys(ctx, JS_UNDEFINED, 1, vc(&val),
+-                                     JS_ITERATOR_KIND_KEY);
+-            if (JS_IsException(tab))
+-                goto exception;
+-            if (js_get_length64(ctx, &len, tab))
+-                goto exception;
++                if (JS_IsException(tab))
++                    goto exception;
++                if (js_get_length64(ctx, &len, tab))
++                    goto exception;
++            } else {
++                ret = JS_GetOwnPropertyNamesInternal(ctx, &tab_atom, &atom_len,
++                                                     JS_VALUE_GET_OBJ(val),
++                                                     JS_GPN_ENUM_ONLY | JS_GPN_STRING_MASK);
++                if (ret < 0)
++                    goto exception;
++                len = atom_len;
++            }
+             string_buffer_putc8(jsc->b, '{');
+             has_content = false;
+             for(i = 0; i < len; i++) {
+                 JS_FreeValue(ctx, prop);
+-                prop = JS_GetPropertyInt64(ctx, tab, i);
+-                if (JS_IsException(prop))
+-                    goto exception;
+-                v = JS_GetPropertyValue(ctx, val, js_dup(prop));
+-                if (JS_IsException(v))
+-                    goto exception;
++                if (tab_atom) {
++                    prop = JS_AtomToString(ctx, tab_atom[i].atom);
++                    if (JS_IsException(prop))
++                        goto exception;
++                    v = JS_GetProperty(ctx, val, tab_atom[i].atom);
++                    if (JS_IsException(v))
++                        goto exception;
++                } else {
++                    prop = JS_GetPropertyInt64(ctx, tab, i);
++                    if (JS_IsException(prop))
++                        goto exception;
++                    v = JS_GetPropertyValue(ctx, val, js_dup(prop));
++                    if (JS_IsException(v))
++                        goto exception;
++                }
+                 v = js_json_check(ctx, jsc, val, v, prop);
+                 if (JS_IsException(v))
+                     goto exception;
+@@ -51020,14 +51149,14 @@ static int js_json_to_str(JSContext *ctx, JSONStringifyContext *jsc,
+             }
+             string_buffer_putc8(jsc->b, '}');
+         }
+-        if (check_exception_free(ctx, js_array_pop(ctx, jsc->stack, 0, NULL, 0)))
+-            goto exception;
++        js_json_stack_pop(jsc);
+         JS_FreeValue(ctx, val);
+         JS_FreeValue(ctx, tab);
+         JS_FreeValue(ctx, sep);
+         JS_FreeValue(ctx, sep1);
+         JS_FreeValue(ctx, indent1);
+         JS_FreeValue(ctx, prop);
++        js_free_prop_enum(ctx, tab_atom, atom_len);
+         return 0;
+     }
+  concat_primitive:
+@@ -51064,6 +51193,7 @@ exception:
+     JS_FreeValue(ctx, sep1);
+     JS_FreeValue(ctx, indent1);
+     JS_FreeValue(ctx, prop);
++    js_free_prop_enum(ctx, tab_atom, atom_len);
+     return -1;
+ }
+ 
+@@ -51073,22 +51203,26 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
+     StringBuffer b_s;
+     JSONStringifyContext jsc_s, *jsc = &jsc_s;
+     JSValue val, v, space, ret, wrapper;
++    JSAtom *prop_atoms;
++    uint32_t prop_atom_len, prop_atom_size;
+     int res;
+     int64_t i, j, n;
+ 
+     jsc->replacer_func = JS_UNDEFINED;
+-    jsc->stack = JS_UNDEFINED;
++    jsc->stack_objs = NULL;
++    jsc->stack_len = 0;
++    jsc->stack_size = 0;
+     jsc->property_list = JS_UNDEFINED;
+     jsc->gap = JS_UNDEFINED;
+     jsc->b = &b_s;
+     jsc->empty = js_empty_string(ctx->rt);
+     ret = JS_UNDEFINED;
+     wrapper = JS_UNDEFINED;
++    prop_atoms = NULL;
++    prop_atom_len = 0;
++    prop_atom_size = 0;
+ 
+     string_buffer_init(ctx, jsc->b, 0);
+-    jsc->stack = JS_NewArray(ctx);
+-    if (JS_IsException(jsc->stack))
+-        goto exception;
+     if (JS_IsFunction(ctx, replacer)) {
+         jsc->replacer_func = replacer;
+     } else {
+@@ -51103,7 +51237,8 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
+             if (js_get_length64(ctx, &n, replacer))
+                 goto exception;
+             for (i = j = 0; i < n; i++) {
+-                JSValue present;
++                JSAtom atom;
++                uint32_t k;
+                 v = JS_GetPropertyInt64(ctx, replacer, i);
+                 if (JS_IsException(v))
+                     goto exception;
+@@ -51126,15 +51261,36 @@ JSValue JS_JSONStringify(JSContext *ctx, JSValueConst obj,
+                     JS_FreeValue(ctx, v);
+                     continue;
+                 }
+-                present = js_array_includes(ctx, jsc->property_list,
+-                                            1, vc(&v));
+-                if (JS_IsException(present)) {
++                atom = JS_ValueToAtom(ctx, v);
++                if (atom == JS_ATOM_NULL) {
+                     JS_FreeValue(ctx, v);
+                     goto exception;
+                 }
+-                if (!JS_ToBoolFree(ctx, present)) {
+-                    JS_SetPropertyInt64(ctx, jsc->property_list, j++, v);
++                for (k = 0; k < prop_atom_len; k++) {
++                    if (prop_atoms[k] == atom)
++                        break;
++                }
++                if (k == prop_atom_len) {
++                    JSAtom *new_atoms;
++                    uint32_t new_size;
++
++                    if (unlikely(prop_atom_len >= prop_atom_size)) {
++                        new_size = max_int(8, prop_atom_size * 3 / 2);
++                        new_atoms = js_realloc2(ctx, prop_atoms,
++                                                sizeof(prop_atoms[0]) * new_size, NULL);
++                        if (!new_atoms) {
++                            JS_FreeAtom(ctx, atom);
++                            JS_FreeValue(ctx, v);
++                            goto exception;
++                        }
++                        prop_atoms = new_atoms;
++                        prop_atom_size = new_size;
++                    }
++                    prop_atoms[prop_atom_len++] = atom;
++                    if (JS_SetPropertyInt64(ctx, jsc->property_list, j++, v) < 0)
++                        goto exception;
+                 } else {
++                    JS_FreeAtom(ctx, atom);
+                     JS_FreeValue(ctx, v);
+                 }
+             }
+@@ -51197,7 +51353,11 @@ done:
+     JS_FreeValue(ctx, jsc->empty);
+     JS_FreeValue(ctx, jsc->gap);
+     JS_FreeValue(ctx, jsc->property_list);
+-    JS_FreeValue(ctx, jsc->stack);
++    js_free(ctx, jsc->stack_objs);
++    for(i = 0; i < prop_atom_len; i++) {
++        JS_FreeAtom(ctx, prop_atoms[i]);
++    }
++    js_free(ctx, prop_atoms);
+     return ret;
+ }
+ 

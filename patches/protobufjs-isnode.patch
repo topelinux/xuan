@@ -1,0 +1,13 @@
+diff --git a/src/util/minimal.js b/src/util/minimal.js
+--- a/src/util/minimal.js
++++ b/src/util/minimal.js
+@@ -30,7 +30,8 @@
+  * @memberof util
+  * @type {boolean}
+  */
+-util.isNode = Boolean(typeof global !== "undefined"
++util.isNode = Boolean(typeof process === "object" && process.versions && (process.versions.node || process.versions.quickjs));
++util.isNode_original = Boolean(typeof global !== "undefined"
+                    && global
+                    && global.process
+                    && global.process.versions

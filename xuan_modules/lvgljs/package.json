@@ -1,0 +1,9 @@
+{
+  "name": "lvgljs",
+  "version": "0.1.0",
+  "description": "lvgljs bridge module for xuan runtime",
+  "main": "index.js",
+  "type": "module",
+  "os": ["linux"],
+  "cpu": ["arm", "arm64", "x64"]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "lvgl",
+  "version": "0.1.0",
+  "description": "LVGL GUI library integration for xuan runtime",
+  "main": "index.js",
+  "type": "module",
+  "nativeModule": true,
+  "os": ["linux"],
+  "cpu": ["arm", "arm64", "x64"]
+}

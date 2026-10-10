@@ -1,0 +1,15 @@
+{
+  "llm": {
+    "provider": "openai",
+    "model": "qwen3.5-plus",
+    "apiKey": "<YOUR_API_KEY>",
+    "baseUrl": "https://coding.dashscope.aliyuncs.com/v1"
+  },
+  "memory": {
+    "path": "/tmp/xuanling-workspace/memory"
+  },
+  "agent": {
+    "maxToolIterations": 10,
+    "tokenBudget": 8000
+  }
+}

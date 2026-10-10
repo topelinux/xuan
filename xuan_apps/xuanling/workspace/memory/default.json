@@ -1,0 +1,22 @@
+{
+  "key": "default",
+  "updatedAt": 1774504671250,
+  "messages": [
+    {
+      "role": "user",
+      "content": "hi"
+    },
+    {
+      "role": "assistant",
+      "content": "你好！我是玄灵，运行在设备本机上的 xuan 对话助手 👋\n\n我可以帮助你完成以下任务：\n\n- 🔍 **设备诊断**：检查 OpenWrt 环境、xuan、opkg、ubus 等能力\n- 📊 **指标收集**：获取 CPU、内存、负载、网络等系统指标\n- 📝 **日志收集**：从 logread、dmesg、messages、syslog 等来源收集日志\n- 📦 **npm 安装**：在 workspace 下安装 JS 包\n- 🚀 **脚本运行**：执行 workspace 中的 JS 脚本\n- 📁 **文件操作**：查看、读取、写入 workspace 文件\n\n请问有什么需要我帮助的吗？你可以直接告诉我你想完成的任务，或者让我先帮你诊断一下设备环境。"
+    },
+    {
+      "role": "user",
+      "content": "帮我安装 dayjs 并写 demo"
+    },
+    {
+      "role": "assistant",
+      "content": "达到最大工具迭代次数，未完成任务。"
+    }
+  ]
+}

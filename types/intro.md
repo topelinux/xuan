@@ -1,0 +1,85 @@
+# Welcome to the xuan documentation
+
+[*xuan*](https://github.com/topelinux/xuan) is a small and powerful JavaScript
+runtime built on [QuickJS], designed for the Internet of Things and edge devices.
+It targets state-of-the-art ECMAScript and aims for broad Node.js compatibility.
+
+On this site you'll find documentation on all the APIs provided by it.
+
+## Features
+
+Support for the [ES2025] specification (almost complete).
+
+### Node.js compatibility
+
+xuan aims to run existing npm packages with minimal or no modification, and
+ships a Node.js-compatible module and standard library surface.
+
+### Web Platform APIs
+
+- [alert, confirm, prompt] (1)
+- [Console]
+- [Crypto] (2)
+- [Encoding API]
+- [EventTarget]
+- [fetch]
+- [JSON modules]
+- [Performance]
+- [setTimeout, setInterval]
+- [Storage API]
+- [Streams API]
+- [URL]
+- [URLPattern]
+- [URLSearchParams]
+- [WebAssembly] (3)
+- [WebSocket]
+- [Web Workers API]
+
+(1): All of them are async.
+
+(2): No subtle support.
+
+(3): No tables, globals or memory support.
+
+### Runtime features
+
+- Standalone executables
+- TCP and UDP sockets
+- Unix sockets / named pipes
+- Signal handling
+- File operations
+- Child processes
+- DNS (getaddrinfo)
+- WASI
+- MQTT, Serial Port and FFI built in
+- ...
+
+Other extras:
+
+- Import directly from HTTP(S) URLs
+- Import JSON files
+- Builtin test runner
+
+### Standard library
+
+Look at the modules on the left sidebar.
+
+[alert, confirm, prompt]: https://developer.mozilla.org/en-US/docs/Web/API/Window/alert
+[fetch]: https://fetch.spec.whatwg.org/
+[EventTarget]: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget
+[Console]: https://developer.mozilla.org/en-US/docs/Web/API/Console
+[Crypto]: https://developer.mozilla.org/en-US/docs/Web/API/Crypto
+[Encoding API]: https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API
+[JSON modules]: https://github.com/tc39/proposal-json-modules
+[Performance]: https://developer.mozilla.org/en-US/docs/Web/API/Performance
+[setTimeout, setInterval]: https://developer.mozilla.org/en-US/docs/Web/API/setTimeout
+[Storage API]: https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API
+[Streams API]: https://developer.mozilla.org/en-US/docs/Web/API/Streams_API
+[URL]: https://developer.mozilla.org/en-US/docs/Web/API/URL
+[URLPattern]: https://developer.mozilla.org/en-US/docs/Web/API/URLPattern
+[URLSearchParams]: https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams
+[Web Workers API]: https://developer.mozilla.org/en-US/docs/Web/API/Worker
+[WebAssembly]: https://developer.mozilla.org/en-US/docs/WebAssembly
+[WebSocket]: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
+[ES2025]: https://tc39.es/ecma262/
+[QuickJS]: https://bellard.org/quickjs/

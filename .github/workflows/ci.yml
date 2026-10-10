@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake clang libffi-dev
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Build
+        env:
+          CC: ${{ runner.os == 'Linux' && 'clang' || '' }}
+          CXX: ${{ runner.os == 'Linux' && 'clang++' || '' }}
+        run: make
+
+      - name: Smoke test
+        run: ./build/xuan -e "if (1 + 1 !== 2) process.exit(1); console.log('smoke ok:', typeof process.versions.quickjs);"

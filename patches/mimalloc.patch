@@ -1,0 +1,19 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7b8dcdc3..142240af 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -481,7 +481,13 @@ if (MSVC AND MSVC_VERSION GREATER_EQUAL 1914) # vs2017+
+ endif()
+ 
+ if(MINGW)
+-  add_definitions(-D_WIN32_WINNT=0x600)                # issue #976
++  # Use Windows 10 target to match Zig toolchain and avoid macro redefinition
++  add_definitions(-D_WIN32_WINNT=0x0a00)
++endif()
++
++# Disable date-time warning for Windows cross-compilation
++if(WIN32)
++  list(APPEND mi_cflags -Wno-date-time)
+ endif()
+ 
+ if(MI_OPT_ARCH_FLAGS)

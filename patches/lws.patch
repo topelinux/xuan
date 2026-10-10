@@ -1,0 +1,1157 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 50058fd93..0bf63759c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1000,7 +1000,7 @@ endif(MSVC)
+ if (MINGW)
+ 	set(LWS_MINGW_SUPPORT 1)
+ 	set(CMAKE_C_FLAGS "-D__USE_MINGW_ANSI_STDIO ${CMAKE_C_FLAGS}")
+-	add_definitions(-DWINVER=0x0601 -D_WIN32_WINNT=0x0601)
++	add_definitions(-DWINVER=0x0a00 -D_WIN32_WINNT=0x0a00)
+ endif()
+ 
+ if (HDR_PRIVATE)
+diff --git a/include/libwebsockets/lws-callbacks.h b/include/libwebsockets/lws-callbacks.h
+index 455bfb0e4..2f3182b2a 100644
+--- a/include/libwebsockets/lws-callbacks.h
++++ b/include/libwebsockets/lws-callbacks.h
+@@ -424,6 +424,9 @@ enum lws_callback_reasons {
+ 	LWS_CALLBACK_RECEIVE_PONG				=  7,
+ 	/**< servers receive PONG packets with this callback reason */
+ 
++	LWS_CALLBACK_RECEIVE_PING				= 79,
++	/**< servers receive PING packets with this callback reason */
++
+ 	LWS_CALLBACK_WS_PEER_INITIATED_CLOSE			= 38,
+ 	/**< The peer has sent an unsolicited Close WS packet.  in and
+ 	 * len are the optional close code (first 2 bytes, network
+@@ -551,6 +554,9 @@ enum lws_callback_reasons {
+ 	LWS_CALLBACK_CLIENT_RECEIVE_PONG			=  9,
+ 	/**< clients receive PONG packets with this callback reason */
+ 
++	LWS_CALLBACK_CLIENT_RECEIVE_PING			= 80,
++	/**< clients receive PING packets with this callback reason */
++
+ 	LWS_CALLBACK_CLIENT_WRITEABLE				= 10,
+ 	/**<  If you call lws_callback_on_writable() on a connection, you will
+ 	 * get one of these callbacks coming when the connection socket
+diff --git a/include/libwebsockets/lws-http.h b/include/libwebsockets/lws-http.h
+index 82bda9ed6..c341276ff 100644
+--- a/include/libwebsockets/lws-http.h
++++ b/include/libwebsockets/lws-http.h
+@@ -515,6 +515,14 @@ typedef void (*lws_hdr_custom_fe_cb_t)(const char *name, int nlen, void *opaque)
+ LWS_VISIBLE LWS_EXTERN int
+ lws_hdr_custom_name_foreach(struct lws *wsi, lws_hdr_custom_fe_cb_t cb, void *opaque);
+ 
++int
++lws_hdr_h2_trailer_copy(struct lws *wsi, char *dst, int len, const char *name,
++			int nlen);
++
++int
++lws_hdr_h2_trailer_name_foreach(struct lws *wsi, lws_hdr_custom_fe_cb_t cb,
++				void *opaque);
++
+ /**
+  * lws_get_urlarg_by_name_safe() - get copy and return length of y for x=y urlargs
+  *
+@@ -1026,4 +1034,3 @@ LWS_VISIBLE LWS_EXTERN int
+ lws_h2_get_peer_txcredit_estimate(struct lws *wsi);
+ 
+ ///@}
+-
+diff --git a/lib/core-net/client/connect4.c b/lib/core-net/client/connect4.c
+index d96ba7c5c..41b843f3f 100644
+--- a/lib/core-net/client/connect4.c
++++ b/lib/core-net/client/connect4.c
+@@ -314,9 +314,18 @@ provoke_service:
+ 
+ 		assert(lws_socket_is_valid(wsi->desc.sockfd));
+ 
++		/*
++		 * A localhost / same-host client connect may complete
++		 * synchronously, so connect3 never arms POLLOUT for an async
++		 * connect completion.  TLS / h2 setup can still need future
++		 * writable callbacks after the first forced service pass.
++		 */
++		if (lws_change_pollfd(wsi, 0, LWS_POLLOUT))
++			goto failed;
++
+ 		pfd.fd = wsi->desc.sockfd;
+-		pfd.events = LWS_POLLIN;
+-		pfd.revents = LWS_POLLIN;
++		pfd.events = LWS_POLLIN | LWS_POLLOUT;
++		pfd.revents = LWS_POLLIN | LWS_POLLOUT;
+ 
+ 		n = lws_service_fd_tsi(wsi->a.context, &pfd, wsi->tsi);
+ 		if (n < 0) {
+diff --git a/lib/core-net/close.c b/lib/core-net/close.c
+index b17877f4e..7bc6bdcfb 100644
+--- a/lib/core-net/close.c
++++ b/lib/core-net/close.c
+@@ -264,6 +264,9 @@ __lws_free_wsi(struct lws *wsi)
+ #if defined(LWS_WITH_CLIENT)
+ 	if (wsi->stash)
+ 		lws_free_set_NULL(wsi->stash);
++#if defined(LWS_WITH_HTTP2)
++	lws_h2_trailer_clear(wsi);
++#endif
+ #endif
+ 
+ 	if (wsi->a.context->event_loop_ops->destroy_wsi)
+@@ -1063,4 +1066,3 @@ lws_close_free_wsi(struct lws *wsi, enum lws_close_status reason, const char *ca
+ 	lws_context_unlock(cx);
+ }
+ 
+-
+diff --git a/lib/core-net/private-lib-core-net.h b/lib/core-net/private-lib-core-net.h
+index 794838023..c3521427f 100644
+--- a/lib/core-net/private-lib-core-net.h
++++ b/lib/core-net/private-lib-core-net.h
+@@ -1163,6 +1163,21 @@ lws_header_table_reset(struct lws *wsi, int autoservice);
+ void
+ __lws_header_table_reset(struct lws *wsi, int autoservice);
+ 
++#if defined(LWS_WITH_HTTP2) && defined(LWS_WITH_CLIENT)
++void
++lws_h2_trailer_block_start(struct lws *wsi);
++
++void
++lws_h2_trailer_block_end(struct lws *wsi);
++
++void
++lws_h2_trailer_clear(struct lws *wsi);
++
++int
++lws_h2_trailer_append(struct lws *wsi, const char *name, size_t name_len,
++		      const char *value, size_t value_len);
++#endif
++
+ char * LWS_WARN_UNUSED_RESULT
+ lws_hdr_simple_ptr(struct lws *wsi, enum lws_token_indexes h);
+ 
+diff --git a/lib/core-net/service.c b/lib/core-net/service.c
+index 2bec2e807..646113e4a 100644
+--- a/lib/core-net/service.c
++++ b/lib/core-net/service.c
+@@ -165,6 +165,24 @@ lws_handle_POLLOUT_event(struct lws *wsi, struct lws_pollfd *pollfd)
+ 	if (pollfd) {
+ 		int eff = vwsi->leave_pollout_active;
+ 
++#if defined(LWS_WITH_HTTP2)
++		if (!eff && wsi->h2.h2n &&
++		    (lwsi_state(wsi) == LRS_H2_WAITING_TO_SEND_HEADERS ||
++		     (wsi->client_h2_alpn && wsi->h2.h2n->pps)))
++			eff = 1;
++		if (!eff && wsi->h2.h2n && wsi->client_h2_alpn) {
++			struct lws *cwsi = wsi->mux.child_list;
++
++			while (cwsi) {
++				if (cwsi->mux.requested_POLLOUT) {
++					eff = 1;
++					break;
++				}
++				cwsi = cwsi->mux.sibling_list;
++			}
++		}
++#endif
++
+ 		if (!eff) {
+ 			if (lws_change_pollfd(wsi, LWS_POLLOUT, 0)) {
+ 				lwsl_wsi_info(wsi, "failed at set pollfd");
+diff --git a/lib/event-libs/libuv/libuv.c b/lib/event-libs/libuv/libuv.c
+index 23894df11..7c16499ff 100644
+--- a/lib/event-libs/libuv/libuv.c
++++ b/lib/event-libs/libuv/libuv.c
+@@ -528,6 +528,17 @@ elops_accept_uv(struct lws *wsi)
+ 
+ 	((uv_handle_t *)w_read->pwatcher)->data = (void *)wsi;
+ 
++	/*
++	 * When using a foreign event loop, unref internal handles (event
++	 * pipe, system vhost wsis like async-dns and stdin) so they don't
++	 * prevent the loop from exiting when all real connections are
++	 * closed.  Use vhost_list (first vhost == system vhost) instead
++	 * of vhost_system, which may still be NULL during init.
++	 */
++	if (pt->event_loop_foreign && (wsi->event_pipe ||
++	    wsi->a.vhost == pt->context->vhost_list))
++		uv_unref((uv_handle_t *)w_read->pwatcher);
++
+ 	ptpriv->extant_handles++;
+ 
+ 	lwsl_wsi_debug(wsi, "thr %d: sa left %d: dyn left: %d",
+@@ -748,6 +759,8 @@ elops_init_pt_uv(struct lws_context *context, void *_loop, int tsi)
+ 		uv_idle_init(loop, &ptpriv->idle);
+ 		LWS_UV_REFCOUNT_STATIC_HANDLE_NEW(&ptpriv->idle, pt);
+ 		uv_idle_start(&ptpriv->idle, lws_uv_idle);
++		if (pt->event_loop_foreign)
++			uv_unref((uv_handle_t *)&ptpriv->idle);
+ 
+ 		ns = LWS_ARRAY_SIZE(sigs);
+ 		if (lws_check_opt(context->options,
+@@ -782,6 +795,8 @@ elops_init_pt_uv(struct lws_context *context, void *_loop, int tsi)
+ 
+ 	uv_timer_init(ptpriv->io_loop, &ptpriv->sultimer);
+ 	LWS_UV_REFCOUNT_STATIC_HANDLE_NEW(&ptpriv->sultimer, pt);
++	if (pt->event_loop_foreign)
++		uv_unref((uv_handle_t *)&ptpriv->sultimer);
+ 
+ 	return status;
+ }
+@@ -949,4 +964,3 @@ const lws_plugin_evlib_t evlib_uv = {
+ 
+ 	.ops	= &event_loop_ops_uv
+ };
+-
+diff --git a/lib/misc/cache-ttl/file.c b/lib/misc/cache-ttl/file.c
+index 7c8d35369..ef29abc22 100644
+--- a/lib/misc/cache-ttl/file.c
++++ b/lib/misc/cache-ttl/file.c
+@@ -685,6 +685,17 @@ nsc_regen(lws_cache_nscookiejar_t *cache, const char *wc_delete,
+ 	close(ctx.fdt);
+ 	ctx.fdt = -1;
+ 
++#if defined(WIN32)
++	/*
++	 * On Windows, unlink / rename fail while fd holds the original
++	 * file open for reading.  Close it first so the replace can
++	 * succeed.  nsc_backing_close_unlock() checks fd >= 0, so
++	 * setting it to -1 makes the later close a safe no-op.
++	 */
++	close(fd);
++	fd = -1;
++#endif
++
+ 	if (unlink(cache->cache.info.u.nscookiejar.filepath) == -1)
+ 		lwsl_info("%s: unlink %s failed\n", __func__,
+ 			  cache->cache.info.u.nscookiejar.filepath);
+diff --git a/lib/roles/h2/hpack.c b/lib/roles/h2/hpack.c
+index 55d7bfd62..60d105625 100644
+--- a/lib/roles/h2/hpack.c
++++ b/lib/roles/h2/hpack.c
+@@ -24,6 +24,13 @@
+ 
+ #include "private-lib-core.h"
+ 
++#if defined(LWS_WITH_CUSTOM_HEADERS)
++#define UHO_NLEN	0
++#define UHO_VLEN	2
++#define UHO_LL		4
++#define UHO_NAME	8
++#endif
++
+ /*
+  * Official static header table for HPACK
+  *        +-------+-----------------------------+---------------+
+@@ -293,6 +300,49 @@ static int lws_frag_end(struct lws *wsi)
+ 	return 0;
+ }
+ 
++#if defined(LWS_WITH_HTTP2) && defined(LWS_WITH_CLIENT)
++static int
++lws_h2_capture_trailer(struct lws *wsi, int hdr_token_idx,
++		       const char *custom_name, size_t custom_name_len,
++		       const char *custom_value, size_t custom_value_len)
++{
++	const char *name = custom_name;
++	size_t name_len = custom_name_len;
++	const char *value = custom_value;
++	size_t value_len = custom_value_len;
++	int frag;
++
++	if (!wsi->http.h2_trailer_block)
++		return 0;
++
++	if (!name) {
++		const unsigned char *tok_name;
++
++		if (hdr_token_idx <= 0)
++			return 0;
++
++		tok_name = lws_token_to_string((enum lws_token_indexes)hdr_token_idx);
++		if (!tok_name)
++			return 0;
++
++		name = (const char *)tok_name;
++		name_len = strlen(name);
++		if (name_len && name[name_len - 1] == ':')
++			name_len--;
++		if (!name_len || name[0] == ':')
++			return 0;
++
++		frag = wsi->http.ah->nfrag - 1;
++		if (frag <= 0)
++			return 0;
++		value = wsi->http.ah->data + wsi->http.ah->frags[frag].offset;
++		value_len = wsi->http.ah->frags[frag].len;
++	}
++
++	return lws_h2_trailer_append(wsi, name, name_len, value, value_len);
++}
++#endif
++
+ int
+ lws_hdr_extant(struct lws *wsi, enum lws_token_indexes h)
+ {
+@@ -1171,8 +1221,17 @@ pre_data:
+ 							    __func__);
+ 						return 1;
+ 					}
+-				} //else
+-					//lwsl_header("ignoring %c\n", c1);
++				} else if (h2n->unknown_header) {
++#if defined(LWS_WITH_CUSTOM_HEADERS)
++					if ((unsigned int)ah->pos >=
++					    wsi->a.context->max_http_header_data) {
++						lwsl_notice("%s: unk hdr val overflow\n",
++							    __func__);
++						return 1;
++					}
++					ah->data[ah->pos++] = (char)c1;
++#endif
++				}
+ 			} else {
+ 				/*
+ 				 * Convert name using existing parser,
+@@ -1263,6 +1322,12 @@ fin:
+ 		 * we have got both the header and value
+ 		 */
+ 
++#if defined(LWS_WITH_CUSTOM_HEADERS)
++		if (h2n->unknown_header && ah->unk_pos) {
++			lws_ser_wu16be((uint8_t *)&ah->data[ah->unk_pos + UHO_VLEN],
++				       (uint16_t)(ah->pos - ah->unk_value_pos));
++		}
++#endif
+ 		m = -1;
+ 		switch (h2n->hpack_type) {
+ 		/*
+@@ -1342,6 +1407,31 @@ add_it:
+ 		if (m != -1 && m != LWS_HPACK_IGNORE_ENTRY)
+ 			lws_dump_header(wsi, m);
+ 
++#if defined(LWS_WITH_HTTP2) && defined(LWS_WITH_CLIENT)
++#if defined(LWS_WITH_CUSTOM_HEADERS)
++		if (h2n->unknown_header && ah->unk_pos) {
++			size_t name_len = lws_ser_ru16be(
++				(uint8_t *)&ah->data[ah->unk_pos + UHO_NLEN]);
++			size_t value_len = lws_ser_ru16be(
++				(uint8_t *)&ah->data[ah->unk_pos + UHO_VLEN]);
++			const char *name = &ah->data[ah->unk_pos + UHO_NAME];
++			const char *value = &ah->data[ah->unk_value_pos];
++
++			if (lws_h2_capture_trailer(wsi, -1, name, name_len,
++						  value, value_len))
++				return 1;
++		} else
++#endif
++		if (m != -1 && m != LWS_HPACK_IGNORE_ENTRY &&
++		    lws_h2_capture_trailer(wsi, m, NULL, 0, NULL, 0))
++			return 1;
++#endif
++
++#if defined(LWS_WITH_CUSTOM_HEADERS)
++		if (h2n->unknown_header)
++			ah->unk_pos = 0;
++#endif
++
+ 		if (lws_hpack_handle_pseudo_rules(nwsi, wsi, m))
+ 			return 1;
+ 
+diff --git a/lib/roles/h2/http2.c b/lib/roles/h2/http2.c
+index eccdcf0be..cda13b119 100644
+--- a/lib/roles/h2/http2.c
++++ b/lib/roles/h2/http2.c
+@@ -413,6 +413,13 @@ lws_h2_issue_preface(struct lws *wsi)
+ 	h2n->count = 0;
+ 	wsi->txc.tx_cr = 65535;
+ 
++	/*
++	 * For client connections, start highest_sid_opened at 0.
++	 * The first client-initiated stream will be assigned sid=1
++	 * in lws_h2_client_handshake() (see the +1 adjustment there).
++	 */
++	h2n->highest_sid_opened = 0;
++
+ 	/*
+ 	 * we must send a settings frame
+ 	 */
+@@ -970,7 +977,6 @@ lws_h2_parse_frame_header(struct lws *wsi)
+ 	/*
+ 	 * We just got the frame header
+ 	 */
+-	h2n->count = 0;
+ 	h2n->swsi = wsi;
+ 	/* b31 is a reserved bit */
+ 	h2n->sid = h2n->sid & 0x7fffffff;
+@@ -997,8 +1003,22 @@ lws_h2_parse_frame_header(struct lws *wsi)
+ 		 */
+ 		lws_set_timeout(wsi, PENDING_TIMEOUT_HTTP_KEEPALIVE_IDLE, ds);
+ 	}
+-	if (h2n->sid)
+-		h2n->swsi = lws_wsi_mux_from_id(wsi, h2n->sid);
++	if (h2n->sid) {
++		struct lws *found = lws_wsi_mux_from_id(wsi, h2n->sid);
++		h2n->swsi = found;
++	}
++
++	/*
++	 * For zero-length frames, call lws_h2_parse_end_of_frame immediately
++	 * since there are no body bytes to process.  Also reset frame_state
++	 * so the next byte starts a new frame header.
++	 */
++	if (h2n->length == 0) {
++		int ret = lws_h2_parse_end_of_frame(wsi);
++		if (ret)
++			return ret;
++		h2n->frame_state = 0;
++	}
+ 
+ 	lwsl_debug("%s (%s): fr hdr: typ 0x%x, fla 0x%x, sid 0x%x, len 0x%x\n",
+ 		  lws_wsi_tag(wsi), lws_wsi_tag(h2n->swsi), h2n->type,
+@@ -1283,6 +1303,12 @@ lws_h2_parse_frame_header(struct lws *wsi)
+ 				if (!h2n->swsi)
+ 					break;
+ 			}
++			if (h2n->swsi && h2n->swsi->client_mux_substream) {
++				if (h2n->swsi->hdr_parsing_completed)
++					lws_h2_trailer_block_start(h2n->swsi);
++				else
++					lws_h2_trailer_clear(h2n->swsi);
++			}
+ 			goto update_end_headers;
+ 		}
+ #endif
+@@ -1494,17 +1520,37 @@ lws_h2_parse_end_of_frame(struct lws *wsi)
+ 			lws_context_lock(wsi->a.context, "h2 mig");
+ 			lws_vhost_lock(wsi->a.vhost);
+ 
++			/*
++			 * Temporarily reset highest_sid_opened so the
++			 * sid=1 migration check passes.  The first client
++			 * stream used the network wsi directly; migration
++			 * creates a proper child wsi to replace it.
++			 */
++			unsigned int saved_highest = h2n->highest_sid_opened;
++			h2n->highest_sid_opened = 0;
++
+ 			h2n->swsi = __lws_wsi_server_new(wsi->a.vhost, wsi, 1);
+ 
++			h2n->highest_sid_opened = saved_highest;
++
+ 			lws_vhost_unlock(wsi->a.vhost);
+ 			lws_context_unlock(wsi->a.context);
+ 
+ 			if (!h2n->swsi)
+ 				return 1;
++			/*
++			 * Save and restore the current frame's SID.
++			 * h2n->sid is used for the frame being parsed, but
++			 * migration also needs to record the child's SID.
++			 */
++			unsigned int saved_frame_sid = h2n->sid;
+ 			h2n->sid = 1;
+ 
+ 			assert(lws_wsi_mux_from_id(wsi, 1) == h2n->swsi);
+ 
++			/* Restore the frame's SID for subsequent processing */
++			h2n->sid = saved_frame_sid;
++
+ 		//	lws_role_transition(wsi, LWSIFR_CLIENT,
+ 		//			    LRS_H2_WAITING_TO_SEND_HEADERS,
+ 		//			    &role_ops_h2);
+@@ -1674,6 +1720,8 @@ lws_h2_parse_end_of_frame(struct lws *wsi)
+ 			lwsl_info("%s: cli int serv hs closed, or redir\n", __func__);
+ 			return 2;
+ 		}
++		if (h2n->swsi->client_mux_substream)
++			lws_h2_trailer_block_end(h2n->swsi);
+ #endif
+ 
+ 		if (lws_hdr_extant(h2n->swsi, WSI_TOKEN_HTTP_CONTENT_LENGTH)) {
+@@ -2466,6 +2514,7 @@ try_frame_start:
+ 					h2n->preamble = 0;
+ 					h2n->length = c;
+ 					h2n->inside = 0;
++					h2n->sid = 0;  /* reset SID before accumulation */
+ 					break;
+ 				case 1:
+ 				case 2:
+@@ -2489,9 +2538,14 @@ try_frame_start:
+ 				}
+ 			}
+ 
+-			if (h2n->frame_state == LWS_H2_FRAME_HEADER_LENGTH &&
+-			    lws_h2_parse_frame_header(wsi))
++		if (h2n->frame_state == LWS_H2_FRAME_HEADER_LENGTH &&
++		    h2n->count == 0) {
++			if (lws_h2_parse_frame_header(wsi))
+ 				goto fail;
++			/* Prevent re-entry: count was reset to 0 in
++			 * lws_h2_parse_frame_header. Use inside as a flag. */
++			h2n->inside = 0xFFFFFFFF;
++		}
+ 			break;
+ 
+ 		default:
+@@ -2544,7 +2598,15 @@ lws_h2_client_handshake(struct lws *wsi)
+ 	 * receives an unexpected stream identifier MUST respond with a
+ 	 * connection error (Section 5.4.1) of type PROTOCOL_ERROR.
+ 	 */
+-	unsigned int sid = nwsi->h2.h2n->highest_sid_opened + 2;
++	unsigned int sid;
++	/*
++	 * For the very first client-initiated stream, use sid=1.
++	 * Subsequent streams increment by 2 to maintain odd client IDs.
++	 */
++	if (nwsi->h2.h2n->highest_sid_opened == 0)
++		sid = 1;
++	else
++		sid = nwsi->h2.h2n->highest_sid_opened + 2;
+ 
+ 	lwsl_debug("%s\n", __func__);
+ 
+@@ -2618,15 +2680,13 @@ lws_h2_client_handshake(struct lws *wsi)
+ 
+ //	n = lws_hdr_total_length(wsi, _WSI_TOKEN_CLIENT_ORIGIN);
+ //	simp = lws_hdr_simple_ptr(wsi, _WSI_TOKEN_CLIENT_ORIGIN);
+-#if 0
+ 	if (n && simp && lws_add_http_header_by_token(wsi,
+ 				WSI_TOKEN_HTTP_COLON_AUTHORITY,
+ 				(unsigned char *)simp, n, &p, end))
+ 		goto fail_length;
+-#endif
+ 
+ 
+-	if (/*!wsi->client_h2_alpn && */n && simp &&
++	if (!wsi->client_h2_alpn && n && simp &&
+ 	    lws_add_http_header_by_token(wsi, WSI_TOKEN_HOST,
+ 				(unsigned char *)simp, n, &p, end))
+ 		goto fail_length;
+@@ -2699,6 +2759,9 @@ lws_h2_client_handshake(struct lws *wsi)
+ 	lws_h2_state(wsi, LWS_H2_STATE_OPEN);
+ 	lwsi_set_state(wsi, LRS_ESTABLISHED);
+ 
++	if (wsi->client_http_body_pending && lws_callback_as_writeable(wsi))
++		return -1;
++
+ 	if (wsi->flags & LCCSCF_HTTP_MULTIPART_MIME)
+ 		lws_callback_on_writable(wsi);
+ 
+diff --git a/lib/roles/h2/ops-h2.c b/lib/roles/h2/ops-h2.c
+index 26cd55322..88309ffcf 100644
+--- a/lib/roles/h2/ops-h2.c
++++ b/lib/roles/h2/ops-h2.c
+@@ -976,6 +976,21 @@ rops_perform_user_POLLOUT_h2(struct lws *wsi)
+ 
+ 	lws_wsi_mux_dump_waiting_children(wsi);
+ 
++#if defined(LWS_WITH_CLIENT)
++	/*
++	 * The initial client h2 transaction is carried directly by the
++	 * network wsi as stream id 1.  There is no mux child yet, so the
++	 * normal child walk below has nobody to service.  Drive the client
++	 * handshake on the network wsi itself.
++	 */
++	if (wsi->client_h2_alpn && !wsi->mux.child_list &&
++	    lwsi_state(wsi) == LRS_H2_WAITING_TO_SEND_HEADERS) {
++		if (lws_h2_client_handshake(wsi))
++			return -1;
++		return 0;
++	}
++#endif
++
+ 	wsi2 = &wsi->mux.child_list;
+ 	if (!*wsi2)
+ 		return 0;
+diff --git a/lib/roles/http/client/client-http.c b/lib/roles/http/client/client-http.c
+index 77b3c1ace..78daa4702 100644
+--- a/lib/roles/http/client/client-http.c
++++ b/lib/roles/http/client/client-http.c
+@@ -252,6 +252,14 @@ start_ws_handshake:
+ 					goto bail3;
+ 				}
+ 
++			/*
++			 * In libuv mode the handshake-driving POLLOUT can be
++			 * consumed in the same service turn that completes TLS.
++			 * Keep POLLOUT armed so the queued H2 SETTINGS / header
++			 * path receives a real writable callback afterwards.
++			 */
++			((volatile struct lws *)wsi)->leave_pollout_active = 1;
++
+ 		//	lwsi_set_state(wsi, LRS_H1C_ISSUE_HANDSHAKE2);
+ 			lws_set_timeout(wsi, PENDING_TIMEOUT_AWAITING_CLIENT_HS_SEND,
+ 					(int)context->timeout_secs);
+diff --git a/lib/roles/http/date.c b/lib/roles/http/date.c
+index 327ca601b..afeea35f9 100644
+--- a/lib/roles/http/date.c
++++ b/lib/roles/http/date.c
+@@ -53,7 +53,10 @@ lws_http_date_render(char *buf, size_t len, const struct tm *tm)
+ int
+ lws_http_date_render_from_unix(char *buf, size_t len, const time_t *t)
+ {
+-#if defined(LWS_HAVE_GMTIME_R)
++#if defined(_WIN32)
++	/* Windows doesn't have gmtime_r, use gmtime instead */
++	struct tm *tm = gmtime(t);
++#elif defined(LWS_HAVE_GMTIME_R)
+ 	struct tm tmp;
+ 	struct tm *tm = gmtime_r(t, &tmp);
+ #else
+diff --git a/lib/roles/http/parsers.c b/lib/roles/http/parsers.c
+index 2c8fc8aa5..cbac47ae4 100644
+--- a/lib/roles/http/parsers.c
++++ b/lib/roles/http/parsers.c
+@@ -37,6 +37,13 @@ static const unsigned char lextable_h1[] = {
+ #define UHO_LL		4
+ #define UHO_NAME	8
+ 
++#if defined(LWS_WITH_CLIENT)
++#define LWS_ALLOW_CUSTOM_HDRS(_wsi) \
++	(!(_wsi)->mux_substream || (_wsi)->client_mux_substream)
++#else
++#define LWS_ALLOW_CUSTOM_HDRS(_wsi) (!(_wsi)->mux_substream)
++#endif
++
+ #endif
+ 
+ static struct allocated_headers *
+@@ -103,6 +110,77 @@ _lws_header_table_reset(struct allocated_headers *ah)
+ #endif
+ }
+ 
++#if defined(LWS_WITH_HTTP2) && defined(LWS_WITH_CLIENT)
++void
++lws_h2_trailer_clear(struct lws *wsi)
++{
++	struct lws_h2_trailer_hdr *th, *next;
++
++	if (!wsi)
++		return;
++
++	th = wsi->http.h2_trailer_list;
++	while (th) {
++		next = th->next;
++		lws_free(th);
++		th = next;
++	}
++
++	wsi->http.h2_trailer_list = NULL;
++	wsi->http.h2_trailer_tail = NULL;
++	wsi->http.h2_trailer_block = 0;
++}
++
++void
++lws_h2_trailer_block_start(struct lws *wsi)
++{
++	if (!wsi)
++		return;
++
++	lws_h2_trailer_clear(wsi);
++	wsi->http.h2_trailer_block = 1;
++}
++
++void
++lws_h2_trailer_block_end(struct lws *wsi)
++{
++	if (wsi)
++		wsi->http.h2_trailer_block = 0;
++}
++
++int
++lws_h2_trailer_append(struct lws *wsi, const char *name, size_t name_len,
++		      const char *value, size_t value_len)
++{
++	struct lws_h2_trailer_hdr *th;
++	size_t sz;
++
++	if (!wsi || !name || !name_len)
++		return 1;
++
++	sz = sizeof(*th) + name_len + 1 + value_len + 1;
++	th = lws_malloc(sz, "h2 trailer");
++	if (!th)
++		return 1;
++
++	th->next = NULL;
++	th->name_len = (uint16_t)name_len;
++	th->value_len = (uint16_t)value_len;
++	memcpy(th->data, name, name_len);
++	th->data[name_len] = '\0';
++	memcpy(th->data + name_len + 1, value, value_len);
++	th->data[name_len + 1 + value_len] = '\0';
++
++	if (wsi->http.h2_trailer_tail)
++		wsi->http.h2_trailer_tail->next = th;
++	else
++		wsi->http.h2_trailer_list = th;
++	wsi->http.h2_trailer_tail = th;
++
++	return 0;
++}
++#endif
++
+ // doesn't scrub the ah rxbuffer by default, parent must do if needed
+ 
+ void
+@@ -599,7 +677,7 @@ lws_hdr_custom_length(struct lws *wsi, const char *name, int nlen)
+ {
+ 	ah_data_idx_t ll;
+ 
+-	if (!wsi->http.ah || wsi->mux_substream)
++	if (!wsi->http.ah || !LWS_ALLOW_CUSTOM_HDRS(wsi))
+ 		return -1;
+ 
+ 	ll = wsi->http.ah->unk_ll_head;
+@@ -625,7 +703,7 @@ lws_hdr_custom_copy(struct lws *wsi, char *dst, int len, const char *name,
+ 	ah_data_idx_t ll;
+ 	int n;
+ 
+-	if (!wsi->http.ah || wsi->mux_substream)
++	if (!wsi->http.ah || !LWS_ALLOW_CUSTOM_HDRS(wsi))
+ 		return -1;
+ 
+ 	*dst = '\0';
+@@ -658,7 +736,7 @@ lws_hdr_custom_name_foreach(struct lws *wsi, lws_hdr_custom_fe_cb_t cb,
+ {
+ 	ah_data_idx_t ll;
+ 
+-	if (!wsi->http.ah || wsi->mux_substream)
++	if (!wsi->http.ah || !LWS_ALLOW_CUSTOM_HDRS(wsi))
+ 		return -1;
+ 
+ 	ll = wsi->http.ah->unk_ll_head;
+@@ -676,6 +754,91 @@ lws_hdr_custom_name_foreach(struct lws *wsi, lws_hdr_custom_fe_cb_t cb,
+ 
+ 	return 0;
+ }
++
++int
++lws_hdr_h2_trailer_copy(struct lws *wsi, char *dst, int len, const char *name,
++			int nlen)
++{
++#if defined(LWS_WITH_HTTP2) && defined(LWS_WITH_CLIENT)
++	struct lws_h2_trailer_hdr *th;
++
++	if (!wsi)
++		return -1;
++
++	*dst = '\0';
++	th = wsi->http.h2_trailer_list;
++	while (th) {
++		if (th->name_len == nlen &&
++		    !strncmp(name, th->data, (unsigned int)nlen)) {
++			if ((int)th->value_len + 1 > len)
++				return -1;
++			memcpy(dst, th->data + th->name_len + 1, th->value_len);
++			dst[th->value_len] = '\0';
++			return th->value_len;
++		}
++		th = th->next;
++	}
++#else
++	(void)wsi;
++	(void)dst;
++	(void)len;
++	(void)name;
++	(void)nlen;
++#endif
++
++	return -1;
++}
++
++int
++lws_hdr_h2_trailer_name_foreach(struct lws *wsi, lws_hdr_custom_fe_cb_t cb,
++				void *opaque)
++{
++#if defined(LWS_WITH_HTTP2) && defined(LWS_WITH_CLIENT)
++	struct lws_h2_trailer_hdr *th;
++
++	if (!wsi)
++		return -1;
++
++	th = wsi->http.h2_trailer_list;
++	while (th) {
++		cb(th->data, th->name_len, opaque);
++		th = th->next;
++	}
++
++	return 0;
++#else
++	(void)wsi;
++	(void)cb;
++	(void)opaque;
++	return -1;
++#endif
++}
++#endif
++
++#if !defined(LWS_WITH_CUSTOM_HEADERS)
++int
++lws_hdr_h2_trailer_copy(struct lws *wsi, char *dst, int len, const char *name,
++			int nlen)
++{
++	(void)wsi;
++	(void)dst;
++	(void)len;
++	(void)name;
++	(void)nlen;
++
++	return -1;
++}
++
++int
++lws_hdr_h2_trailer_name_foreach(struct lws *wsi, lws_hdr_custom_fe_cb_t cb,
++				void *opaque)
++{
++	(void)wsi;
++	(void)cb;
++	(void)opaque;
++
++	return -1;
++}
+ #endif
+ 
+ char *lws_hdr_simple_ptr(struct lws *wsi, enum lws_token_indexes h)
+@@ -1184,7 +1347,7 @@ swallow:
+ 			 * a known header, we'll snip this.
+ 			 */
+ 
+-			if (!wsi->mux_substream && !ah->unk_pos) {
++			if (LWS_ALLOW_CUSTOM_HDRS(wsi) && !ah->unk_pos) {
+ 				ah->unk_pos = ah->pos;
+ 
+ #if defined(LWS_WITH_CUSTOM_HEADERS)
+@@ -1208,7 +1371,7 @@ swallow:
+ 			pos = ah->lextable_pos;
+ 
+ #if defined(LWS_WITH_CUSTOM_HEADERS)
+-			if (!wsi->mux_substream && pos < 0 && c == ':') {
++			if (LWS_ALLOW_CUSTOM_HDRS(wsi) && pos < 0 && c == ':') {
+ #if defined(_DEBUG)
+ 				char dotstar[64];
+ 				int uhlen;
+@@ -1281,7 +1444,7 @@ nope:
+ 
+ 				/* b7 = 0, end or 3-byte */
+ 				if (lextable_h1[pos] < FAIL_CHAR) {
+-					if (!wsi->mux_substream) {
++					if (LWS_ALLOW_CUSTOM_HDRS(wsi)) {
+ 						/*
+ 						 * We hit a terminal marker, so
+ 						 * we recognized this header...
+@@ -1327,7 +1490,7 @@ nope:
+ #if !defined(LWS_WITH_CUSTOM_HEADERS)
+ 						ah->parser_state = WSI_TOKEN_SKIPPING;
+ #endif
+-						if (wsi->mux_substream)
++						if (!LWS_ALLOW_CUSTOM_HDRS(wsi))
+ 							ah->parser_state = WSI_TOKEN_SKIPPING;
+ 						break;
+ 					}
+@@ -1338,7 +1501,7 @@ nope:
+ 					 * We have the method, this is just an
+ 					 * unknown header then
+ 					 */
+-					if (!wsi->mux_substream)
++					if (LWS_ALLOW_CUSTOM_HDRS(wsi))
+ 						goto unknown_hdr;
+ 					else
+ 						break;
+@@ -1369,7 +1532,7 @@ nope:
+ 				 * It's not a header that lws knows about...
+ 				 */
+ #if defined(LWS_WITH_CUSTOM_HEADERS)
+-				if (!wsi->mux_substream)
++				if (LWS_ALLOW_CUSTOM_HDRS(wsi))
+ 					goto unknown_hdr;
+ #endif
+ 				/*
+@@ -1394,7 +1557,7 @@ nope:
+ 						return LPR_FAIL;
+ 					}
+ 
+-				if (!wsi->mux_substream) {
++				if (LWS_ALLOW_CUSTOM_HDRS(wsi)) {
+ 					/*
+ 					 * Whether we are collecting unknown names or not,
+ 					 * if we matched an internal header we can dispense
+@@ -1436,7 +1599,7 @@ nope:
+ unknown_hdr:
+ 			//ah->parser_state = WSI_TOKEN_SKIPPING;
+ 			//break;
+-			if (!wsi->mux_substream)
++			if (LWS_ALLOW_CUSTOM_HDRS(wsi))
+ 				break;
+ #endif
+ 
+diff --git a/lib/roles/http/private-lib-roles-http.h b/lib/roles/http/private-lib-roles-http.h
+index 7e7684c95..320023c6e 100644
+--- a/lib/roles/http/private-lib-roles-http.h
++++ b/lib/roles/http/private-lib-roles-http.h
+@@ -213,6 +213,15 @@ struct lws_access_log {
+ };
+ #endif
+ 
++#if defined(LWS_WITH_HTTP2) && defined(LWS_WITH_CLIENT)
++struct lws_h2_trailer_hdr {
++	struct lws_h2_trailer_hdr *next;
++	uint16_t name_len;
++	uint16_t value_len;
++	char data[];
++};
++#endif
++
+ #define LWS_HTTP_CHUNK_HDR_MAX_SIZE (6 + 2) /* 6 hex digits and then CRLF */
+ #define LWS_HTTP_CHUNK_TRL_MAX_SIZE (2 + 5) /* CRLF, then maybe 0 CRLF CRLF */
+ 
+@@ -237,6 +246,10 @@ struct _lws_http_mode_related {
+ 	lws_filepos_t filelen;
+ 	lws_fop_fd_t fop_fd;
+ #endif
++#if defined(LWS_WITH_HTTP2) && defined(LWS_WITH_CLIENT)
++	struct lws_h2_trailer_hdr *h2_trailer_list;
++	struct lws_h2_trailer_hdr *h2_trailer_tail;
++#endif
+ #if defined(LWS_WITH_CLIENT)
+ 	char multipart_boundary[16];
+ #endif
+@@ -277,6 +290,9 @@ struct _lws_http_mode_related {
+ 	unsigned int deferred_transaction_completed:1;
+ 	unsigned int content_length_explicitly_zero:1;
+ 	unsigned int content_length_given:1;
++#if defined(LWS_WITH_HTTP2) && defined(LWS_WITH_CLIENT)
++	unsigned int h2_trailer_block:1;
++#endif
+ 	unsigned int did_stream_close:1;
+ 	unsigned int multipart:1;
+ 	unsigned int cgi_transaction_complete:1;
+diff --git a/lib/roles/mqtt/mqtt.c b/lib/roles/mqtt/mqtt.c
+index 64829050c..d5df19792 100644
+--- a/lib/roles/mqtt/mqtt.c
++++ b/lib/roles/mqtt/mqtt.c
+@@ -288,8 +288,6 @@ lws_mqtt_validate_topic(const char *topic, size_t topiclen, uint8_t awsiot)
+ 	} else {
+ 		if (topiclen > LWS_MQTT_MAX_TOPICLEN)
+ 			return LMVTR_FAILED_OVERSIZE;
+-		if (topic[0] == '$')
+-			return LMVTR_FAILED_WILDCARD_FORMAT;
+ 	}
+ 
+ 	while (*sub != 0) {
+@@ -681,6 +679,28 @@ _lws_mqtt_rx_parser(struct lws *wsi, lws_mqtt_parser_t *par,
+ 				goto send_protocol_error_and_close;
+ 			goto cmd_completion;
+ 
++		case LMQCPP_DISCONNECT_PACKET:
++			lwsl_info("%s: received DISCONNECT pkt\n", __func__);
++			lws_mqtt_vbi_init(&par->vbit);
++			par->state = LMQCPP_DISCONNECT_REMAINING_LEN_VBI;
++			break;
++
++		case LMQCPP_DISCONNECT_REMAINING_LEN_VBI:
++			switch (lws_mqtt_vbi_r(&par->vbit, &buf, &len)) {
++			case LMSPR_NEED_MORE:
++				break;
++			case LMSPR_COMPLETED:
++				par->cpkt_remlen = par->vbit.value;
++				par->reason = par->cpkt_remlen && len ?
++					      (lws_mqtt_reason_t)*buf :
++					      LMQCP_REASON_NORMAL_DISCONNECTION;
++				goto peer_disconnect_and_close;
++			default:
++				lwsl_notice("%s: disconnect bad vbi\n", __func__);
++				goto send_protocol_error_and_close;
++			}
++			break;
++
+ 		case LMQCPP_CONNECT_VH_PROPERTIES_VBI_LEN:
+ 			switch (lws_mqtt_vbi_r(&par->vbit, &buf, &len)) {
+ 			case LMSPR_NEED_MORE:
+@@ -1093,6 +1113,7 @@ _lws_mqtt_rx_parser(struct lws *wsi, lws_mqtt_parser_t *par,
+ 			len -= 2;
+ 			par->cpkt_remlen -= 2;
+ 			par->n = 0;
++			par->suback_failure = 0;
+ 			par->state = LMQCPP_SUBACK_PAYLOAD;
+ 			*par->temp = 0;
+ 			break;
+@@ -1108,7 +1129,8 @@ _lws_mqtt_rx_parser(struct lws *wsi, lws_mqtt_parser_t *par,
+ 				case QOS2:
+ 					break;
+ 				case FAILURE_QOS_LEVEL:
+-					goto send_protocol_error_and_close;
++					par->suback_failure = 1;
++					break;
+ 
+ 				default:
+ 					par->reason = LMQCP_REASON_MALFORMED_PACKET;
+@@ -1549,7 +1571,9 @@ bail1:
+ 						if (user_callback_handle_rxflow(
+ 							    w->a.protocol->callback,
+ 							    w, LWS_CALLBACK_MQTT_SUBSCRIBED,
+-							    w->user_space, NULL, 0) < 0) {
++							    w->user_space,
++							    par->suback_failure ? &par->suback_failure : NULL,
++							    par->suback_failure ? 1 : 0) < 0) {
+ 							lwsl_err("%s: MQTT_SUBSCRIBE failed\n",
+ 								 __func__);
+ 							return -1;
+@@ -1868,6 +1892,11 @@ bail1:
+ 			lwsl_err("%s: Unimplemented packet state 0x%x\n",
+ 					__func__, par->state);
+ 			return -1;
++
++		default:
++			lwsl_notice("%s: unhandled packet state 0x%x\n",
++				    __func__, par->state);
++			goto send_protocol_error_and_close;
+ 		}
+ 	}
+ 
+@@ -1880,6 +1909,11 @@ oom:
+ singular_prop_seen_twice:
+ 	lwsl_info("%s: property appears twice\n", __func__);
+ 
++peer_disconnect_and_close:
++	lwsl_info("%s: peer sent DISCONNECT, reason 0x%x\n",
++		  __func__, (unsigned int)par->reason);
++	return -1;
++
+ send_protocol_error_and_close:
+ 	lwsl_notice("%s: peac\n", __func__);
+ 	par->reason = LMQCP_REASON_PROTOCOL_ERROR;
+@@ -2513,4 +2547,3 @@ bail1:
+ 
+ 	return NULL;
+ }
+-
+diff --git a/lib/roles/mqtt/private-lib-roles-mqtt.h b/lib/roles/mqtt/private-lib-roles-mqtt.h
+index dc46a9362..2a24b287c 100644
+--- a/lib/roles/mqtt/private-lib-roles-mqtt.h
++++ b/lib/roles/mqtt/private-lib-roles-mqtt.h
+@@ -175,6 +175,9 @@ typedef enum {
+ 
+ 	LMQCPP_PINGRESP_ZERO = LMQCP_STOC_PINGRESP << 4,
+ 
++	LMQCPP_DISCONNECT_PACKET = LMQCP_DISCONNECT << 4,
++	LMQCPP_DISCONNECT_REMAINING_LEN_VBI,
++
+ 	LMQCPP_PAYLOAD,
+ 
+ 	LMQCPP_EAT_PROPERTIES_AND_COMPLETE,
+@@ -289,6 +292,7 @@ typedef struct lws_mqtt_parser_st {
+ 	uint8_t packet_type_flags;
+ 	uint8_t conn_protocol_version;
+ 	uint8_t fixed;
++	uint8_t suback_failure;
+ 
+ 	uint8_t flag_pending_send_connack_close:1;
+ 	uint8_t flag_pending_send_reason_close:1;
+@@ -446,4 +450,3 @@ lws_mqtt_match_topic_return_t
+ lws_mqtt_is_topic_matched(const char* sub, const char* pub);
+ 
+ #endif /* _PRIVATE_LIB_ROLES_MQTT */
+-
+diff --git a/lib/roles/ws/client-parser-ws.c b/lib/roles/ws/client-parser-ws.c
+index c667d1397..50ee556d7 100644
+--- a/lib/roles/ws/client-parser-ws.c
++++ b/lib/roles/ws/client-parser-ws.c
+@@ -578,6 +578,15 @@ spill:
+ 			lwsl_wsi_info(wsi, "received %d byte ping, sending pong",
+ 				  (int)wsi->ws->rx_ubuf_head);
+ 
++			if (wsi->a.protocol->callback &&
++			    user_callback_handle_rxflow(
++				    wsi->a.protocol->callback, wsi,
++				    LWS_CALLBACK_CLIENT_RECEIVE_PING,
++				    wsi->user_space,
++				    &wsi->ws->rx_ubuf[LWS_PRE],
++				    wsi->ws->rx_ubuf_head))
++				return LWS_HPI_RET_PLEASE_CLOSE_ME;
++
+ 			/* he set a close reason on this guy, ignore PING */
+ 			if (wsi->ws->close_in_ping_buffer_len)
+ 				goto ping_drop;
+@@ -743,6 +752,12 @@ utf8_fail:
+ 			    callback_action != LWS_CALLBACK_CLIENT_RECEIVE_PONG)
+ 				goto already_done;
+ 
++			if (!pmdrx.eb_out.token &&
++			    callback_action == LWS_CALLBACK_CLIENT_RECEIVE_PONG) {
++				pmdrx.eb_out.token = &wsi->ws->rx_ubuf[LWS_PRE];
++				pmdrx.eb_out.len = (int)wsi->ws->rx_ubuf_head;
++			}
++
+ 			if (!pmdrx.eb_out.token)
+ 				goto already_done;
+ 
+@@ -828,5 +843,3 @@ server_cannot_mask:
+ 	/* kill the connection */
+ 	return LWS_HPI_RET_PLEASE_CLOSE_ME;
+ }
+-
+-
+diff --git a/lib/roles/ws/ops-ws.c b/lib/roles/ws/ops-ws.c
+index 80bc6d446..2060953ea 100644
+--- a/lib/roles/ws/ops-ws.c
++++ b/lib/roles/ws/ops-ws.c
+@@ -535,6 +535,15 @@ spill:
+ 			lwsl_info("received %d byte ping, sending pong\n",
+ 						 (int)wsi->ws->rx_ubuf_head);
+ 
++			if (wsi->a.protocol->callback &&
++			    user_callback_handle_rxflow(
++				    wsi->a.protocol->callback, wsi,
++				    LWS_CALLBACK_RECEIVE_PING,
++				    wsi->user_space,
++				    &wsi->ws->rx_ubuf[LWS_PRE],
++				    wsi->ws->rx_ubuf_head))
++				goto ret_asking_close;
++
+ 			if (wsi->ws->pong_pending_flag) {
+ 				/*
+ 				 * there is already a pending pong payload
+@@ -609,8 +618,6 @@ ping_drop:
+ 
+ 		pmdrx.eb_out = pmdrx.eb_in;
+ 
+-		if (wsi->ws->opcode == LWSWSOPC_PONG && !pmdrx.eb_in.len)
+-			goto already_done;
+ #if !defined(LWS_WITHOUT_EXTENSIONS)
+ drain_extension:
+ #endif
+diff --git a/lib/system/async-dns/async-dns.c b/lib/system/async-dns/async-dns.c
+index 766410b16..2a45ce412 100644
+--- a/lib/system/async-dns/async-dns.c
++++ b/lib/system/async-dns/async-dns.c
+@@ -1088,10 +1088,12 @@ lws_async_dns_query(struct lws_context *context, int tsi, const char *name,
+ 	 * to try anything else we need a remote server configured...
+ 	 */
+ 
+-	if (!context->async_dns.nameservers.head &&
+-	    lws_async_dns_init(context)) {
+-		lwsl_cx_notice(context, "init failed");
+-		goto failed;
++	if (!context->async_dns.nameservers.head) {
++		if (lws_async_dns_init(context) ||
++		    !context->async_dns.nameservers.head) {
++			lwsl_cx_notice(context, "no valid dns server");
++			goto failed;
++		}
+ 	}
+ 
+ 	/* make sure we have the remote server UDP enabled, it's cheap if we
+@@ -1100,6 +1102,11 @@ lws_async_dns_query(struct lws_context *context, int tsi, const char *name,
+ 
+ 	lws_async_dns_create_server_wsi(context);
+ 
++	if (!context->async_dns.nameservers.head) {
++		lwsl_cx_notice(context, "no dns server available");
++		goto failed;
++	}
++
+ 	/* there's an ongoing query we can share the result of? */
+ 
+ 	q = lws_adns_get_query(dns, qtype, 0, name);
