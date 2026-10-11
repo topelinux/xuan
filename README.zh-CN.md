@@ -242,9 +242,9 @@ async function loadConfig() {
 // 顶层 await
 const config = await loadConfig();
 
-const mod = await import('sqlite');       // 动态导入
+const os = await import('node:os');       // 动态导入
 console.log(import.meta.dirname);         // 脚本所在目录
-console.log(config, mod);
+console.log(config.id, typeof os.totalmem);
 ```
 
 ```javascript

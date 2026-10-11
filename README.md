@@ -247,9 +247,9 @@ async function loadConfig() {
 // top-level await
 const config = await loadConfig();
 
-const mod = await import('sqlite');       // dynamic import
+const os = await import('node:os');       // dynamic import
 console.log(import.meta.dirname);         // script directory
-console.log(config, mod);
+console.log(config.id, typeof os.totalmem);
 ```
 
 ```javascript
