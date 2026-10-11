@@ -27,6 +27,7 @@ xuan (读作"玄") 是一个轻量级 JavaScript 运行时，设计用于物联�
 - **🔌 IoT 就绪内置模块** — 原生 MQTT、Serial Port (GPIO/I2C/SPI 待添加)
 - **🛠️ 嵌入式就绪** — 支持 MIPS、ARM、RISC-V、x86 等多种架构
 - **📦 编译发布** — 一键编译 JS 为独立可执行文件，无需运行时依赖
+- **🧩 ESM + CommonJS** — 支持 `import`/`export`、动态 `import()`、顶层 `await` 与 `require()`
 
 ---
 
@@ -214,6 +215,49 @@ xuan 内置必需的 IoT 模块，无需额外安装：
 | **gpio** | GPIO 引脚控制 (待添加) |
 | **i2c** | I2C 总线通信 (待添加) |
 | **spi** | SPI 总线通信 (待添加) |
+
+---
+
+## 模块系统与 async
+
+xuan 同时支持 **ES Modules** 与 **CommonJS**，以及贯穿全局的 async/await：
+
+- `import` / `export`、动态 `import()`、`import.meta`
+- **顶层 `await`**
+- 通过 import attributes 导入 JSON
+- 与 CommonJS 互操作：`require()` / `module.exports`
+
+模块解析规则：`.mjs` 一律按 ESM，`.cjs` 一律按 CommonJS；`.js` 看最近的
+`package.json` 的 `"type"`（没有则嗅探文件内容）。
+
+```javascript
+// app.mjs
+import { readFile } from 'node:fs/promises';
+
+async function loadConfig() {
+    const raw = await readFile('./config.json', 'utf8');
+    return JSON.parse(raw);
+}
+
+// 顶层 await
+const config = await loadConfig();
+
+const mod = await import('sqlite');       // 动态导入
+console.log(import.meta.dirname);         // 脚本所在目录
+console.log(config, mod);
+```
+
+```javascript
+// JSON 导入
+import data from './data.json' with { type: 'json' };
+console.log(data.widget.debug);
+
+// 在 ESM 里使用 CommonJS
+const os = require('node:os');
+```
+
+> 💡 内置模块使用 `tjs:` 前缀（如 `import FFI from 'tjs:ffi'`），这是沿用自
+> txiki.js 的命名约定。
 
 ---
 

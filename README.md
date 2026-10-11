@@ -28,6 +28,7 @@ Built for embedded and edge devices.
 - **🔌 IoT-ready built-in modules** — native MQTT and Serial Port (GPIO/I2C/SPI coming soon)
 - **🛠️ Embedded ready** — supports MIPS, ARM, RISC-V and x86
 - **📦 Standalone compilation** — compile JavaScript into a single self-contained executable
+- **🧩 ESM + CommonJS** — `import`/`export`, dynamic `import()`, top-level `await` and `require()`
 
 ---
 
@@ -219,6 +220,49 @@ xuan ships the essential IoT modules out of the box — no extra installs needed
 | **gpio** | GPIO pin control (coming soon) |
 | **i2c** | I2C bus communication (coming soon) |
 | **spi** | SPI bus communication (coming soon) |
+
+---
+
+## Module system and async
+
+xuan supports **ES Modules** and **CommonJS**, plus async/await throughout:
+
+- `import` / `export`, dynamic `import()`, `import.meta`
+- **top-level `await`**
+- JSON imports with import attributes
+- CommonJS interop: `require()` / `module.exports`
+
+Module resolution: `.mjs` is always ESM, `.cjs` is always CommonJS, and `.js`
+follows the nearest `package.json` `"type"` (falling back to content sniffing).
+
+```javascript
+// app.mjs
+import { readFile } from 'node:fs/promises';
+
+async function loadConfig() {
+    const raw = await readFile('./config.json', 'utf8');
+    return JSON.parse(raw);
+}
+
+// top-level await
+const config = await loadConfig();
+
+const mod = await import('sqlite');       // dynamic import
+console.log(import.meta.dirname);         // script directory
+console.log(config, mod);
+```
+
+```javascript
+// JSON import
+import data from './data.json' with { type: 'json' };
+console.log(data.widget.debug);
+
+// CommonJS interop from ESM
+const os = require('node:os');
+```
+
+> 💡 The built-in modules use the `tjs:` scheme (e.g. `import FFI from 'tjs:ffi'`),
+> a naming convention kept from the txiki.js lineage.
 
 ---
 
