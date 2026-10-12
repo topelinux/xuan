@@ -26,6 +26,10 @@ export async function createAgentRuntime(options) {
 
   const tools = createTools(context);
 
+  // Stable id for the conversation, forwarded to providers that route by
+  // session (e.g. OpenCode Go's `x-opencode-session` header).
+  const sessionId = `xuanling-${options.sessionKey || 'default'}`;
+
   async function handleUserMessage(input) {
     const messages = [
       { role: 'system', content: cfg.system },
@@ -36,7 +40,7 @@ export async function createAgentRuntime(options) {
     const maxIter = Number(cfg.agent.maxToolIterations || 10);
 
     for (let i = 0; i < maxIter; i += 1) {
-      const reply = await callLLM(messages, tools);
+      const reply = await callLLM(messages, tools, { sessionId });
 
       if (Array.isArray(reply.tool_calls) && reply.tool_calls.length > 0) {
         messages.push(reply);

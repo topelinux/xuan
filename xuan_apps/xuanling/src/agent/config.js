@@ -6,7 +6,8 @@ const defaultConfig = {
     provider: 'openai',
     model: 'qwen3.5-plus',
     apiKey: process.env.LLM_API_KEY || '',
-    baseUrl: process.env.LLM_BASE_URL || 'https://coding.dashscope.aliyuncs.com/v1'
+    baseUrl: process.env.LLM_BASE_URL || 'https://coding.dashscope.aliyuncs.com/v1',
+    headers: {}
   },
   memory: {
     path: '/tmp/xuanling-workspace/memory'
@@ -24,7 +25,40 @@ const defaultConfig = {
   ].join('\n')
 };
 
-let activeConfig = { ...defaultConfig };
+// Built-in provider presets. Selecting the provider alone is enough; explicit
+// baseUrl/model in the config file (or env) still win.
+const PROVIDER_PRESETS = {
+  'opencode-go': {
+    baseUrl: 'https://opencode.ai/zen/go/v1',
+    model: 'deepseek-v4.1-flash',
+    apiKeyEnv: 'OPENCODE_API_KEY'
+  }
+};
+
+function normalizeLlm(rawLlm) {
+  const llm = {
+    ...defaultConfig.llm,
+    ...(rawLlm || {}),
+    headers: { ...defaultConfig.llm.headers, ...((rawLlm && rawLlm.headers) || {}) }
+  };
+
+  // Environment variables override the config file.
+  if (process.env.LLM_PROVIDER) llm.provider = process.env.LLM_PROVIDER;
+  if (process.env.LLM_MODEL) llm.model = process.env.LLM_MODEL;
+  if (process.env.LLM_API_KEY) llm.apiKey = process.env.LLM_API_KEY;
+  if (process.env.LLM_BASE_URL) llm.baseUrl = process.env.LLM_BASE_URL;
+
+  const preset = PROVIDER_PRESETS[String(llm.provider || '').toLowerCase()];
+  if (preset) {
+    if (!llm.baseUrl || llm.baseUrl === defaultConfig.llm.baseUrl) llm.baseUrl = preset.baseUrl;
+    if (!llm.model || llm.model === defaultConfig.llm.model) llm.model = preset.model;
+    if (!llm.apiKey && preset.apiKeyEnv) llm.apiKey = process.env[preset.apiKeyEnv] || '';
+  }
+
+  return llm;
+}
+
+let activeConfig = { ...defaultConfig, llm: normalizeLlm(defaultConfig.llm) };
 
 export async function loadConfig(path = './config.json') {
   const configFile = resolve(path);
@@ -42,12 +76,12 @@ export async function loadConfig(path = './config.json') {
     activeConfig = {
       ...defaultConfig,
       ...parsed,
-      llm: { ...defaultConfig.llm, ...(parsed.llm || {}) },
+      llm: normalizeLlm(parsed.llm),
       memory: { ...defaultConfig.memory, ...parsedMemory },
       agent: { ...defaultConfig.agent, ...(parsed.agent || {}) }
     };
   } catch {
-    activeConfig = { ...defaultConfig };
+    activeConfig = { ...defaultConfig, llm: normalizeLlm(defaultConfig.llm) };
   }
 
   await mkdir(activeConfig.memory.path, { recursive: true }).catch(() => {});

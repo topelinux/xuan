@@ -12,6 +12,10 @@ function parseArgs(argv) {
     askText: ''
   };
 
+  // Flags may appear before or after the subcommand; everything that is not a
+  // recognised flag becomes part of the `ask` question.
+  const positional = [];
+
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
 
@@ -40,8 +44,7 @@ function parseArgs(argv) {
 
     if (token === 'ask') {
       out.command = 'ask';
-      out.askText = argv.slice(i + 1).join(' ').trim();
-      break;
+      continue;
     }
 
     if (token === 'chat') {
@@ -53,7 +56,11 @@ function parseArgs(argv) {
       out.command = 'help';
       continue;
     }
+
+    positional.push(token);
   }
+
+  out.askText = positional.join(' ').trim();
 
   return out;
 }

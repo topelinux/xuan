@@ -1,5 +1,7 @@
 import { getConfig } from './config.js';
 
+const VERSION = '0.1';
+
 export function buildToolDefinitions(tools) {
   return Object.entries(tools).map(([name, tool]) => ({
     type: 'function',
@@ -17,7 +19,30 @@ export function buildToolDefinitions(tools) {
   }));
 }
 
-export async function callLLM(messages, tools) {
+function buildHeaders(cfg, sessionId) {
+  const headers = {
+    'Content-Type': 'application/json',
+    // OpenCode Go asks clients to identify themselves with their own user agent
+    // instead of a generic SDK/HTTP-library name.
+    'User-Agent': `xuanling/${VERSION} (+https://github.com/topelinux/xuan)`
+  };
+
+  if (cfg.llm.apiKey) {
+    headers.Authorization = `Bearer ${cfg.llm.apiKey}`;
+  }
+
+  const provider = String(cfg.llm.provider || '').toLowerCase();
+  const baseUrl = String(cfg.llm.baseUrl || '');
+  if (provider === 'opencode-go' || baseUrl.includes('opencode.ai')) {
+    // A stable per-conversation id lets OpenCode Go optimize routing and
+    // prompt caching.
+    headers['x-opencode-session'] = sessionId || 'xuanling';
+  }
+
+  return { ...headers, ...(cfg.llm.headers || {}) };
+}
+
+export async function callLLM(messages, tools, options = {}) {
   const cfg = getConfig();
   const payload = {
     model: cfg.llm.model,
@@ -28,10 +53,7 @@ export async function callLLM(messages, tools) {
 
   const res = await fetch(`${cfg.llm.baseUrl}/chat/completions`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${cfg.llm.apiKey}`
-    },
+    headers: buildHeaders(cfg, options.sessionId),
     body: JSON.stringify(payload)
   });
 
