@@ -42,3 +42,37 @@ jobs:
 
       - name: Smoke test
         run: ./build/xuan -e "if (1 + 1 !== 2) process.exit(1); console.log('smoke ok:', typeof process.versions.quickjs);"
+
+  windows-cross:
+    name: Build & smoke test (windows-x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build clang libffi-dev
+
+      - name: Install zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Cross-compile for Windows (zig)
+        env:
+          CC: clang
+          CXX: clang++
+        run: ./scripts/build-windows.sh
+
+      - name: Verify artifact
+        run: test -f build-windows/xuan.exe

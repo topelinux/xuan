@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Wrapper so CMake uses Zig's ranlib for cross-compiled COFF objects.
+exec zig ranlib "$@"

@@ -44,6 +44,37 @@ Built for embedded and edge devices.
 
 ## Quick start
 
+### Download a prebuilt binary
+
+Don't want to build from source? Grab a prebuilt binary from the
+[Releases](https://github.com/topelinux/xuan/releases) page:
+
+| Platform | Architecture | Asset |
+|----------|--------------|-------|
+| Linux | x86_64 | `xuan-<version>-linux-x86_64.tar.gz` |
+| macOS | arm64 (Apple Silicon) | `xuan-<version>-macos-arm64.tar.gz` |
+| Windows | x86_64 | `xuan-<version>-windows-x86_64.zip` |
+
+```bash
+# Linux / macOS: unpack and run
+tar -xzf xuan-<version>-linux-x86_64.tar.gz -C xuan
+./xuan/bin/xuan -e "console.log('Hello from xuan!')"
+```
+
+```powershell
+# Windows (PowerShell): unpack and run
+Expand-Archive xuan-<version>-windows-x86_64.zip -DestinationPath xuan
+.\xuan\bin\xuan.exe -e "console.log('Hello from xuan!')"
+```
+
+> Each archive ships the `xuan` runtime together with its bundled shared
+> libraries and native modules (`bin/`, `lib/`, `node_modules/`). Keep that
+> directory layout intact.
+>
+> **macOS note**: the prebuilt binaries are not notarized. If Gatekeeper blocks
+> them, run `xattr -dr com.apple.quarantine <unpacked-dir>` or allow them in
+> System Settings → Privacy & Security.
+
 ### Clone and build
 
 ```bash

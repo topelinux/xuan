@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+# Wrapper so CMake uses Zig's archiver for cross-compiled COFF objects
+# (the host `ar` cannot always handle foreign object formats).
+exec zig ar "$@"

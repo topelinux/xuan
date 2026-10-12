@@ -43,6 +43,34 @@ xuan (读作"玄") 是一个轻量级 JavaScript 运行时，设计用于物联�
 
 ## 快速开始
 
+### 下载预编译版本
+
+不想从源码构建？可以直接从 [Releases](https://github.com/topelinux/xuan/releases) 页面下载预编译版本：
+
+| 平台 | 架构 | 产物 |
+|------|------|------|
+| Linux | x86_64 | `xuan-<version>-linux-x86_64.tar.gz` |
+| macOS | arm64（Apple Silicon） | `xuan-<version>-macos-arm64.tar.gz` |
+| Windows | x86_64 | `xuan-<version>-windows-x86_64.zip` |
+
+```bash
+# Linux / macOS：解压后直接运行
+tar -xzf xuan-<version>-linux-x86_64.tar.gz -C xuan
+./xuan/bin/xuan -e "console.log('Hello from xuan!')"
+```
+
+```powershell
+# Windows (PowerShell)：解压后直接运行
+Expand-Archive xuan-<version>-windows-x86_64.zip -DestinationPath xuan
+.\xuan\bin\xuan.exe -e "console.log('Hello from xuan!')"
+```
+
+> 压缩包内包含 `xuan` 运行时、随附的动态库与原生模块（`bin/`、`lib/`、
+> `node_modules/`）。请保持该目录结构完整。
+>
+> **macOS 提示**：预编译版本未做公证（notarization）。若被 Gatekeeper 拦截，
+> 请执行 `xattr -dr com.apple.quarantine <解压目录>`，或在「系统设置 → 隐私与安全性」中放行。
+
 ### 克隆与构建
 
 ```bash

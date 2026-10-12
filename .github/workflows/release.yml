@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g. 1.4.0). Defaults to package.json version.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-22.04
+            platform: linux
+            arch: x86_64
+            target: native
+            build_dir: build
+            cc: clang-15
+            cxx: clang++-15
+          - name: macos-arm64
+            os: macos-14
+            platform: macos
+            arch: arm64
+            target: native
+            build_dir: build
+            cc: clang
+            cxx: clang++
+          - name: windows-x86_64
+            os: ubuntu-22.04
+            platform: windows
+            arch: x86_64
+            target: windows-zig
+            build_dir: build-windows
+            cc: clang-15
+            cxx: clang++-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Building xuan ${VERSION} for ${{ matrix.name }}"
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build clang-15 libffi-dev zip
+
+      - name: Install zig (Windows cross build)
+        if: matrix.target == 'windows-zig'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Build (native)
+        if: matrix.target == 'native'
+        env:
+          TJS_VERSION: ${{ steps.version.outputs.version }}
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: make
+
+      - name: Build (Windows via zig)
+        if: matrix.target == 'windows-zig'
+        env:
+          TJS_VERSION: ${{ steps.version.outputs.version }}
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: ./scripts/build-windows.sh
+
+      - name: Smoke test
+        if: matrix.target == 'native'
+        run: ./build/xuan -e "if (1 + 1 !== 2) process.exit(1); console.log('smoke ok:', typeof process.versions.quickjs);"
+
+      - name: Package dist
+        env:
+          TJS_VERSION: ${{ steps.version.outputs.version }}
+          TJS_RELEASE_PLATFORM: ${{ matrix.platform }}
+          TJS_RELEASE_ARCH: ${{ matrix.arch }}
+        run: ./scripts/package-dist.sh "${{ matrix.build_dir }}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xuan-${{ matrix.name }}
+          path: dist-archives/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -lhR artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          draft: false

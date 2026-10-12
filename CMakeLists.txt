@@ -39,10 +39,35 @@ if(TJS_SANITIZE)
     endif()
 endif()
 
+# Version defaults. Override at configure time for releases, e.g.
+#   TJS_VERSION=1.4.0 make
+#   TJS_VERSION=1.4.0-rc1 cmake -B build ...
+# TJS_VERSION accepts "MAJOR.MINOR.PATCH" with an optional "-suffix".
 set(TJS__VERSION_MAJOR 1)
 set(TJS__VERSION_MINOR 3)
 set(TJS__VERSION_PATCH 0)
 set(TJS__VERSION_SUFFIX "")
+
+set(_tjs_version_override "")
+if(DEFINED ENV{TJS_VERSION} AND NOT "$ENV{TJS_VERSION}" STREQUAL "")
+    set(_tjs_version_override "$ENV{TJS_VERSION}")
+elseif(DEFINED TJS_VERSION AND NOT "${TJS_VERSION}" STREQUAL "")
+    set(_tjs_version_override "${TJS_VERSION}")
+endif()
+
+if(NOT _tjs_version_override STREQUAL "")
+    string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)(-(.*))?$" _tjs_version_match "${_tjs_version_override}")
+    if(DEFINED CMAKE_MATCH_1 AND NOT CMAKE_MATCH_1 STREQUAL "")
+        set(TJS__VERSION_MAJOR ${CMAKE_MATCH_1})
+        set(TJS__VERSION_MINOR ${CMAKE_MATCH_2})
+        set(TJS__VERSION_PATCH ${CMAKE_MATCH_3})
+        set(TJS__VERSION_SUFFIX "${CMAKE_MATCH_4}")
+    else()
+        message(WARNING "TJS_VERSION='${_tjs_version_override}' is not MAJOR.MINOR.PATCH[-suffix]; using default ${TJS__VERSION_MAJOR}.${TJS__VERSION_MINOR}.${TJS__VERSION_PATCH}")
+    endif()
+endif()
+message(STATUS "xuan version: ${TJS__VERSION_MAJOR}.${TJS__VERSION_MINOR}.${TJS__VERSION_PATCH}${TJS__VERSION_SUFFIX}")
+
 configure_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/src/version.h.in"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/version.h"
@@ -221,6 +246,15 @@ if(APPLE)
     target_link_options(xuan-cli PRIVATE "-Wl,-export_dynamic")
 elseif(UNIX)
     target_link_options(xuan-cli PRIVATE "-rdynamic")
+endif()
+# Make the shipped layout relocatable: in the dist tree the binary lives in
+# bin/ and bundled shared libraries in lib/ (see scripts/assemble-dist.sh), so
+# teach the loader to look next to the binary and in ../lib.
+if(UNIX AND NOT APPLE)
+    set_target_properties(xuan-cli PROPERTIES
+        BUILD_RPATH "$ORIGIN:$ORIGIN/../lib"
+        INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib"
+    )
 endif()
 # On Windows with MSVC the stack size if by default 1MB, same as our engine.
 # Bump it up to 8MB.
