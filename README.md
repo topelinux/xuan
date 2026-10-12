@@ -47,7 +47,17 @@ Built for embedded and edge devices.
 ### Download a prebuilt binary
 
 Don't want to build from source? Grab a prebuilt binary from the
-[Releases](https://github.com/topelinux/xuan/releases) page:
+[Releases](https://github.com/topelinux/xuan/releases) page, or install in one
+command (Linux x86_64 / macOS arm64):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/topelinux/xuan/main/scripts/install.sh | sh
+```
+
+The installer downloads the matching release into `~/.xuan` and symlinks `xuan`
+into `~/.local/bin` (override with `XUAN_HOME` / `XUAN_BIN_DIR`).
+
+Prebuilt assets:
 
 | Platform | Architecture | Asset |
 |----------|--------------|-------|

@@ -45,7 +45,17 @@ xuan (读作"玄") 是一个轻量级 JavaScript 运行时，设计用于物联�
 
 ### 下载预编译版本
 
-不想从源码构建？可以直接从 [Releases](https://github.com/topelinux/xuan/releases) 页面下载预编译版本：
+不想从源码构建？可以直接从 [Releases](https://github.com/topelinux/xuan/releases)
+页面下载预编译版本，或用一条命令安装（Linux x86_64 / macOS arm64）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/topelinux/xuan/main/scripts/install.sh | sh
+```
+
+安装脚本会把对应版本下载到 `~/.xuan`，并把 `xuan` 软链到 `~/.local/bin`
+（可用 `XUAN_HOME` / `XUAN_BIN_DIR` 覆盖）。
+
+预编译产物：
 
 | 平台 | 架构 | 产物 |
 |------|------|------|
