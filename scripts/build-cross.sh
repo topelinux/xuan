@@ -176,6 +176,15 @@ if [[ "$#" -gt 1 ]]; then
 	exit 1
 fi
 
+# Apply the in-tree dependency patches (libuv/quickjs/mimalloc/libwebsockets)
+# before configuring. Native builds get this for free through the Makefile, but
+# this script drives cmake directly, so do it explicitly — otherwise a fresh
+# checkout configures unpatched deps (e.g. mimalloc's -Wdate-time breaks the
+# Windows cross build).
+echo ""
+echo "=== Applying dependency patches ==="
+make -C "${ROOT_DIR}" apply-deps-patches
+
 # Always (re)generate JS->C bundles on host before cross configure/build.
 # Cross toolchains cannot run target-built xuanc, so bundle generation must happen on host.
 echo ""
