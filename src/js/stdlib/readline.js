@@ -13,6 +13,7 @@ class Interface {
         this._reader = null;
         this._lineCallback = null;
         this._reading = false;
+        this._closed = false;
     }
 
     async _readFromStdin() {
@@ -57,7 +58,9 @@ class Interface {
                 }
             }
         } catch (e) {
-            console.error('stdin read error:', e);
+            // After close() the pending read() is intentionally rejected when
+            // the reader lock is released; that is not an error worth reporting.
+            if (!this._closed) console.error('stdin read error:', e);
         } finally {
             this._reading = false;
         }
@@ -84,9 +87,14 @@ class Interface {
     }
 
     close() {
+        this._closed = true;
         this._lineCallback = null;
         if (this._reader) {
-            this._reader.releaseLock();
+            try {
+                this._reader.releaseLock();
+            } catch {
+                // Releasing the lock may reject a pending read(); ignore it.
+            }
             this._reader = null;
         }
     }
