@@ -307,6 +307,12 @@ const os = require('node:os');
 
 ---
 
+## Node.js compatibility
+
+xuan targets practical Node.js compatibility rather than byte-for-byte parity.
+See [docs/node-compat.md](docs/node-compat.md) for a per-module matrix of what
+is implemented, what is partial, and what is missing.
+
 ## API examples
 
 ### MQTT (built-in)

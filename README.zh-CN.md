@@ -299,6 +299,11 @@ const os = require('node:os');
 
 ---
 
+## Node.js 兼容性
+
+xuan 面向"实用级" Node.js 兼容，而非逐字节对齐。逐模块的「已实现 / 部分 /
+缺失」矩阵见 [docs/node-compat.md](docs/node-compat.md)。
+
 ## API 示例
 
 ### MQTT (内置)
