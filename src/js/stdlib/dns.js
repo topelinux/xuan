@@ -4,7 +4,7 @@
  * Provides only what grpc-js actually uses:
  *   - dns.promises.Resolver (class, mostly stub)
  *   - dns.promises.lookup(hostname, { all })
- *   - dns.promises.resolveTxt(hostname) (stub, returns [])
+ *   - dns.promises.resolveTxt(hostname) (not implemented; throws)
  *
  * Uses core.getaddrinfo() under the hood.
  */
@@ -15,6 +15,19 @@ const core = globalThis[Symbol.for('tjs.internal.core')];
 const AF_INET = core.AF_INET;
 const AF_INET6 = core.AF_INET6;
 const AF_UNSPEC = core.AF_UNSPEC;
+
+/**
+ * Build an explicit "not implemented" error.
+ *
+ * An unimplemented API must fail loudly: returning an empty result would be
+ * indistinguishable from a successful lookup that simply found no records, and
+ * callers would then act on a wrong assumption.
+ */
+function notImplemented(method) {
+    const err = new Error(`${method} is not implemented in xuan yet`);
+    err.code = 'ERR_NOT_IMPLEMENTED';
+    return err;
+}
 
 function familyToNumber(family) {
     if (family === 'IPv4' || family === 4) return AF_INET;
@@ -60,11 +73,12 @@ async function lookup(hostname, options = {}) {
 }
 
 /**
- * dns.promises.resolveTxt(hostname) -> string[][]
- * Stub: returns empty array. grpc-js uses this for service discovery.
+ * dns.promises.resolveTxt(hostname) -> never
+ * Not implemented: throws ERR_NOT_IMPLEMENTED. Use dns.lookup() for name
+ * resolution; TXT records are not supported yet.
  */
 async function resolveTxt(_hostname) {
-    return [];
+    throw notImplemented('dns.resolveTxt');
 }
 
 /**
@@ -91,7 +105,7 @@ class Resolver {
     }
 
     async resolveTxt(_hostname) {
-        return [];
+        throw notImplemented('dns.Resolver.prototype.resolveTxt');
     }
 
     cancel() {

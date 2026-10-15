@@ -50,7 +50,7 @@ Legend: ✅ present · 🟡 partial (known gaps listed) · ❌ not available.
 | `wasi` | ✅ | WASI preview support. |
 | `child_process` | 🟡 | `spawn`, `spawnSync`, `exec`, `execSync`. Missing: `execFile`, `fork`. |
 | `crypto` | 🟡 | Hashing (`createHash`), HMAC (`createHmac`), `randomBytes`/`randomFill(Sync)`, `timingSafeEqual`, `getHashes`. Missing: ciphers, `createSign`/`createVerify`, key generation. `randomUUID` is available via the Web Crypto global. |
-| `dns` | 🟡 | Only `lookup` is a real resolver. `resolveTxt` is a stub returning `[]`; `Resolver` is limited. |
+| `dns` | 🟡 | `lookup` and `Resolver.resolve4`/`resolve6` are real. `resolveTxt` is **not implemented** and throws `ERR_NOT_IMPLEMENTED` (it never returns an empty result, so it can't be mistaken for a successful lookup). |
 | `http2` | 🟡 | **Client only.** `createServer()` / `createSecureServer()` throw `not implemented`. Only present when built with HTTP/2. |
 | `os` | 🟡 | `cpus`, `freemem`, `totalmem`, `uptime`, `networkInterfaces`. Missing: `hostname`, `platform`, `arch`, `release`, `type`, `homedir`, `tmpdir`, `loadavg`, `endianness`, `userInfo`, `constants` (some equivalents live on `process`). |
 | `zlib` | 🟡 | `gunzip`/`gzip` paths present. `deflateRaw` / `inflateRaw` throw `zlib is not supported in this build`. |
