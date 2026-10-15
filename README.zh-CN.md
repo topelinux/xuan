@@ -8,9 +8,10 @@ xuan (读作"玄") 是一个轻量级 JavaScript 运行时，设计用于物联�
 [QuickJS](https://bellard.org/quickjs/) 和 [tjs(txiki.js)](https://github.com/saghul/txiki.js/)
 构建，继承其轻量级特性：
 
-- **广泛的 Node.js API 兼容性** — 可直接运行现有 npm 包
-- **内置 IoT 模块** — MQTT、Serial Port (GPIO/I2C/SPI 待添加)
+- **编译发布** — `xuan compile` 把脚本打包成单个自包含可执行文件
 - **FFI (Foreign Function Interface)** — 直接调用 C 库函数，复用现有 C 库
+- **内置 IoT 模块** — MQTT、Serial Port (GPIO/I2C/SPI 待添加)
+- **广泛的 Node.js API 兼容性** — 可直接运行现有 npm 包
 - **低内存占用** — 显著小于 Node.js
 - **紧凑的二进制** — 约 6-7MB（不含 SQLite 更小）
 
@@ -20,13 +21,14 @@ xuan (读作"玄") 是一个轻量级 JavaScript 运行时，设计用于物联�
 
 ## 特性
 
-- **⚡ 闪电般快速启动** — 毫秒级冷启动，适合资源受限的 IoT 设备
-- **📦 极小体积** — 二进制大小约 6-7MB（不含 SQLite 更小）
-- **💾 低内存使用** — 相比 Node.js 显著降低内存占用
-- **🌐 Node.js 兼容** — 广泛的 Node.js API 兼容性，直接运行现有 npm 包
+- **📦 编译发布** — `xuan compile` 把脚本打成单个自包含可执行文件，无需 Node、无需随运行时一起分发
+- **🔗 FFI** — 直接调用 C 库函数，复用现有 C 库
 - **🔌 IoT 就绪内置模块** — 原生 MQTT、Serial Port (GPIO/I2C/SPI 待添加)
+- **🌐 Node.js 兼容** — 广泛的 Node.js API 兼容性，直接运行现有 npm 包
+- **⚡ 闪电般快速启动** — 毫秒级冷启动，适合资源受限的 IoT 设备
+- **💾 低内存使用** — 相比 Node.js 显著降低内存占用
+- **🪶 极小体积** — 二进制大小约 6-7MB（不含 SQLite 更小）
 - **🛠️ 嵌入式就绪** — 支持 MIPS、ARM、RISC-V、x86 等多种架构
-- **📦 编译发布** — 一键编译 JS 为独立可执行文件，无需运行时依赖
 - **🧩 ESM + CommonJS** — 支持 `import`/`export`、动态 `import()`、顶层 `await` 与 `require()`
 
 ---
@@ -529,6 +531,24 @@ TJS_AARCH64_SYSROOT=/path/to/aarch64-sysroot ./scripts/build-aarch64.sh
 # 需要先安装 zig: brew install zig (macOS) 或 apt install zig (Linux)
 TJS_MIPS_SYSROOT=/path/to/target-mipsel_24kc_musl TJS_LINK_MODE=dynamic TJS_USE_DEPS_LIBUV_SHARED=ON ./scripts/build-mips-static.sh
 ```
+
+---
+
+## 与 tjs (txiki.js) 的关系
+
+xuan fork 自 [tjs (txiki.js)](https://github.com/saghul/txiki.js/)，分叉点为上游
+commit `0d2d316`（2026-02-24），位于 `v26.2.1` 与 `v26.3.0` 两个 tag 之间。此后主要偏离：
+
+- **改名**：项目、CLI 与二进制由 `tjs` 改为 `xuan`；内置模块前缀 `tjs:` 保留以延续血缘兼容。
+- **重构 Node 兼容层**：Node 风格模块改为 `src/js/stdlib/*.js` + 原生 `src/mod_*.c`
+  （fs、crypto、net、tls、http、http2、events、stream、url、util、buffer 等），
+  当前状态见 [docs/node-compat.md](docs/node-compat.md)。
+- **新增内置模块**（上游没有）：原生 MQTT（基于 libwebsockets）、Serial Port、
+  npm 兼容的包管理器（`xuan npm`）、HTTP/2 客户端。
+- **依赖更新**：QuickJS（quickjs-ng）固定为 0.15.1；libuv、libwebsockets、mbedTLS、
+  mimalloc 以 submodule 固定版本，并在构建时应用少量树内补丁。
+
+如果你在用 tjs 并想对比，最接近的上游参考版本是 `v26.2.1`。
 
 ---
 

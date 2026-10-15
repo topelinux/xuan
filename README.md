@@ -9,9 +9,10 @@ Internet of Things. It is built on top of [QuickJS](https://bellard.org/quickjs/
 and [tjs (txiki.js)](https://github.com/saghul/txiki.js/), and inherits their
 small footprint:
 
-- **Broad Node.js API compatibility** — run existing npm packages directly
-- **Built-in IoT modules** — MQTT, Serial Port (GPIO/I2C/SPI coming soon)
+- **Standalone compilation** — `xuan compile` turns a script into a single self-contained executable
 - **FFI (Foreign Function Interface)** — call C library functions directly and reuse existing C libraries
+- **Built-in IoT modules** — MQTT, Serial Port (GPIO/I2C/SPI coming soon)
+- **Broad Node.js API compatibility** — run existing npm packages directly
 - **Low memory footprint** — significantly smaller than Node.js
 - **Compact binary** — roughly 6–7 MB (smaller without SQLite)
 
@@ -21,13 +22,14 @@ Built for embedded and edge devices.
 
 ## Features
 
-- **⚡ Instant startup** — millisecond cold start, ideal for resource-constrained IoT devices
-- **📦 Tiny footprint** — ~6–7 MB binary (smaller without SQLite)
-- **💾 Low memory usage** — a fraction of Node.js memory usage
-- **🌐 Node.js compatible** — broad API compatibility; run existing npm packages
+- **📦 Standalone compilation** — `xuan compile` bundles a script into a single self-contained executable (no Node, no runtime to ship)
+- **🔗 FFI** — call C library functions directly and reuse existing C libraries
 - **🔌 IoT-ready built-in modules** — native MQTT and Serial Port (GPIO/I2C/SPI coming soon)
+- **🌐 Node.js compatible** — broad API compatibility; run existing npm packages
+- **⚡ Instant startup** — millisecond cold start, ideal for resource-constrained IoT devices
+- **💾 Low memory usage** — a fraction of Node.js memory usage
+- **🪶 Tiny footprint** — ~6–7 MB binary (smaller without SQLite)
 - **🛠️ Embedded ready** — supports MIPS, ARM, RISC-V and x86
-- **📦 Standalone compilation** — compile JavaScript into a single self-contained executable
 - **🧩 ESM + CommonJS** — `import`/`export`, dynamic `import()`, top-level `await` and `require()`
 
 ---
@@ -543,6 +545,29 @@ TJS_AARCH64_SYSROOT=/path/to/aarch64-sysroot ./scripts/build-aarch64.sh
 # Install zig first: brew install zig (macOS) or apt install zig (Linux)
 TJS_MIPS_SYSROOT=/path/to/target-mipsel_24kc_musl TJS_LINK_MODE=dynamic TJS_USE_DEPS_LIBUV_SHARED=ON ./scripts/build-mips-static.sh
 ```
+
+---
+
+## Relationship to tjs (txiki.js)
+
+xuan is forked from [tjs (txiki.js)](https://github.com/saghul/txiki.js/) at
+upstream commit `0d2d316` (2026-02-24), which sits between the `v26.2.1` and
+`v26.3.0` tags. Since then it has diverged:
+
+- **Renamed** `tjs` → `xuan` for the project, CLI and binary. The built-in
+  module scheme (`tjs:*`) is kept for lineage compatibility.
+- **Restructured the Node compatibility layer**: Node-style modules now live in
+  `src/js/stdlib/*.js` backed by native `src/mod_*.c` (fs, crypto, net, tls,
+  http, http2, events, stream, url, util, buffer, …). Current status is tracked
+  in [docs/node-compat.md](docs/node-compat.md).
+- **New built-in modules** not present upstream: native MQTT (over
+  libwebsockets), Serial Port, an npm-compatible package manager (`xuan npm`),
+  and an HTTP/2 client.
+- **Updated dependencies**: QuickJS (quickjs-ng) is pinned at 0.15.1; libuv,
+  libwebsockets, mbedTLS and mimalloc are pinned as submodules with a few
+  in-tree patches applied at build time.
+
+If you use tjs and want to compare, the closest upstream reference is `v26.2.1`.
 
 ---
 
