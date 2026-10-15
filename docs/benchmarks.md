@@ -58,22 +58,32 @@ figure.
 | Target | Build | Binary | `-e 0` min/med/p95 (ms) | script min/med/p95 (ms) |
 | --- | --- | --- | --- | --- |
 | macos-arm64 | dev `a7217c2` | 4.3 MiB | 6.02 / 6.47 / 7.36 | 10.38 / 10.80 / 12.18 |
+| linux-mips (MT7621) | dev 2026-10-13 | 4.1 MiB | 73.4 / 74.1 / 79.6 | 223.5 / 224.7 / 230.9[^mips-polyfills] |
 | linux-x86_64 | — | _pending_ | _pending_ | _pending_ |
 | windows-x86_64 | — | _pending_ | _pending_ | _pending_ |
-| linux-mips (7621) | — | _pending_ | _pending_ | _pending_ |
 | linux-riscv64 | — | _pending_ | _pending_ | _pending_ |
 
 *macos-arm64 environment: macOS 13.7.3, Apple M1, Darwin 22.6.0; xuan dev build
 (quickjs 0.15.1, libuv 1.51.1-dev, lws 4.5.2, mimalloc 3.2.7).*
+
+*linux-mips environment: MediaTek MT7621 (MIPS 1004Kc), Linux 5.10.221, 249 MB
+RAM; xuan dev build (quickjs 0.15.1, libuv 1.51.0, lws 4.5.2, wamr 2.4.4; no
+mimalloc).*
+
+[^mips-polyfills]: Running a **script file** eagerly evaluates the heavy web
+polyfills: `XUAN_STARTUP_PROFILE=1` attributes ~134 ms of the 224 ms to
+`eval_polyfills_heavy_bytecode`. With `XUAN_LIGHTWEIGHT_POLYFILLS=1` the same
+script starts in ~77 ms — the same as `-e 0`, which already takes the
+lightweight path.
 
 ### Resident memory (RSS)
 
 | Target | idle peak / floor | MQTT subscriber peak / floor |
 | --- | --- | --- |
 | macos-arm64 | 5.3 / 2.4 MiB | 10.0 / 5.3 MiB[^macos-rss] |
+| linux-mips (MT7621) | 4.6 / 1.0 MiB | 6.6 / 6.6 MiB |
 | linux-x86_64 | _pending_ | _pending_ |
 | windows-x86_64 | _pending_ | _pending_ |
-| linux-mips (7621) | _pending_ | _pending_ |
 | linux-riscv64 | _pending_ | _pending_ |
 
 [^macos-rss]: macOS memory accounting is not stable enough to compare across
