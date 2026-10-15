@@ -1,0 +1,6 @@
+# Ignore transient harness scratch files; keep the *.tsv results.
+.cold_eval
+.cold_script
+.cold.err
+.rss*
+.mqtt.log

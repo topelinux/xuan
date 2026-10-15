@@ -443,8 +443,9 @@ console.log(myfunc.call(1, 2));
 *Environment: macOS 13.7.3, Apple M1, Darwin 22.6.0*
 *Method: all runtimes invoked with `-e "0"`, 220 runs each, randomly interleaved; wall-clock time from process start to exit.*
 
-> Note: this round only measures cold start time and executable size; resident
-> memory was not measured.
+> Note: this table only covers cold start time and executable size. Per-target
+> numbers (binary size, RSS, cold start) and the scripted harness that produces
+> them are in **[docs/benchmarks.md](docs/benchmarks.md)**.
 
 ### Startup tuning environment variables
 
