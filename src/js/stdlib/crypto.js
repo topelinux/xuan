@@ -243,5 +243,81 @@ function randomFill(buffer, offset, size, callback) {
     }
 }
 
-export { createHash, createHmac, getHashes, randomBytes, randomFillSync, randomFill, timingSafeEqual };
-export default { createHash, createHmac, getHashes, randomBytes, randomFillSync, randomFill, timingSafeEqual };
+// Synchronous AES encryption for Node callers. Stream/Transform cipher APIs and
+// authenticated modes are deliberately not advertised by this facade.
+class Cipheriv {
+    constructor(algorithm, key, iv) {
+        const match = /^aes-(128|192|256)-(ecb|ctr)$/.exec(String(algorithm).toLowerCase());
+        if (!match) throw new TypeError('Unsupported cipher: ' + algorithm);
+        this.key = Uint8Array.from(toBytes(key));
+        if (this.key.length !== Number(match[1]) / 8) throw new RangeError('Invalid key length');
+        this.mode = match[2];
+        if (this.mode === 'ctr') {
+            this.counter = Uint8Array.from(toBytes(iv));
+            if (this.counter.length !== 16) throw new RangeError('Invalid initialization vector');
+        } else if (iv != null && toBytes(iv).length) throw new TypeError('Invalid initialization vector');
+        this.pending = new Uint8Array(0);
+        this.stream = new Uint8Array(16);
+        this.offset = 16;
+        this.padding = true;
+        this.done = false;
+    }
+    setAutoPadding(enabled = true) {
+        if (this.done) throw new Error('Cipher already finalized');
+        this.padding = !!enabled;
+        return this;
+    }
+    output(bytes, encoding) {
+        const result = globalThis.Buffer ? globalThis.Buffer.from(bytes) : bytes;
+        if (encoding) {
+            if (!globalThis.Buffer) throw new TypeError('Output encoding requires Buffer');
+            return result.toString(encoding);
+        }
+        return result;
+    }
+    block(bytes) { return new Uint8Array(core.crypto.aesEncryptBlock(this.key, bytes)); }
+    update(data, inputEncoding, outputEncoding) {
+        if (this.done) throw new Error('Cipher already finalized');
+        const bytes = toBytes(data, inputEncoding);
+        if (this.mode === 'ctr') {
+            const result = new Uint8Array(bytes.length);
+            for (let i = 0; i < bytes.length; ++i) {
+                if (this.offset === 16) {
+                    this.stream = this.block(this.counter);
+                    this.offset = 0;
+                    for (let j = 15; j >= 0; --j) {
+                        this.counter[j] = (this.counter[j] + 1) & 255;
+                        if (this.counter[j] !== 0) break;
+                    }
+                }
+                result[i] = bytes[i] ^ this.stream[this.offset++];
+            }
+            return this.output(result, outputEncoding);
+        }
+        const combined = new Uint8Array(this.pending.length + bytes.length);
+        combined.set(this.pending); combined.set(bytes, this.pending.length);
+        const length = combined.length - combined.length % 16;
+        const result = new Uint8Array(length);
+        for (let i = 0; i < length; i += 16) result.set(this.block(combined.subarray(i, i + 16)), i);
+        this.pending = combined.slice(length);
+        return this.output(result, outputEncoding);
+    }
+    final(outputEncoding) {
+        if (this.done) throw new Error('Cipher already finalized');
+        this.done = true;
+        try {
+            if (this.mode === 'ctr') return this.output(new Uint8Array(0), outputEncoding);
+            if (!this.padding) {
+                if (this.pending.length) throw new Error('Wrong final block length');
+                return this.output(new Uint8Array(0), outputEncoding);
+            }
+            const last = new Uint8Array(16).fill(16 - this.pending.length);
+            last.set(this.pending);
+            return this.output(this.block(last), outputEncoding);
+        } finally { this.key.fill(0); this.pending.fill(0); this.stream.fill(0); }
+    }
+}
+function createCipheriv(algorithm, key, iv) { return new Cipheriv(algorithm, key, iv); }
+
+export { createHash, createHmac, getHashes, randomBytes, randomFillSync, randomFill, timingSafeEqual, createCipheriv };
+export default { createHash, createHmac, getHashes, randomBytes, randomFillSync, randomFill, timingSafeEqual, createCipheriv };

@@ -1,5 +1,6 @@
 const core = globalThis[Symbol.for('tjs.internal.core')];
 import { Readable, Writable } from 'tjs:stream';
+import { join as joinPath } from 'tjs:path';
 
 const textEncoder = new TextEncoder();
 
@@ -604,7 +605,15 @@ function readFileSync(path, options = undefined) {
 function writeFileSync(path, data, options = undefined) {
     const opts = parseWriteOptions(options, { encoding: 'utf8', mode: 0o666, flag: 'w' });
     const bytes = asBuffer(data, opts.encoding);
-
+    if (typeof path === 'number') {
+        let offset = 0;
+        while (offset < bytes.length) {
+            const n = core.writeSync(path, bytes, offset, bytes.length - offset, undefined);
+            if (!n) throw new Error('Unable to write file descriptor');
+            offset += n;
+        }
+        return;
+    }
     return core.writeFileSync(path, bytes, opts.flag, opts.mode);
 }
 
@@ -632,7 +641,17 @@ function rmSync(path, options = undefined) {
     const recursive = typeof options === 'object' && !!options?.recursive;
 
     if (recursive) {
-        throw new TypeError('rmSync recursive is not supported yet');
+        if (!existsSync(path)) {
+            if (force) return;
+
+            return core.rmSync(path, false);
+        }
+
+        if (lstatSync(path).isDirectory()) {
+            for (const name of readdirSync(path)) {
+                rmSync(joinPath(String(path), name), options);
+            }
+        }
     }
 
     return core.rmSync(path, force);
@@ -641,6 +660,9 @@ function rmSync(path, options = undefined) {
 function closeSync(fd) {
     return core.closeSync(fd);
 }
+function fsyncSync(fd) { return core.fsyncSync(fd); }
+function chmodSync(path, mode) { return core.chmodSync(path, mode); }
+function mkdtempSync(prefix) { return core.mkdtempSync(prefix); }
 
 function openSync(path, flags = 'r', mode = 0o666) {
     return core.openSync(path, flags, mode);
@@ -744,6 +766,7 @@ const promises = {
 };
 
 const fs = {
+    fsyncSync, chmodSync, mkdtempSync,
     promises,
     readFile,
     writeFile,
@@ -791,6 +814,7 @@ const fs = {
 };
 
 export {
+    fsyncSync, chmodSync, mkdtempSync,
     promises,
     readFile,
     writeFile,

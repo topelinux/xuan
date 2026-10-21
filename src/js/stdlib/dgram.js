@@ -60,7 +60,7 @@ class Socket extends EventEmitter {
                 port: msg?.addr?.port ?? 0,
                 size: msg?.data?.byteLength ?? 0,
             };
-            this.emit('message', msg.data, rinfo);
+            this.emit('message', globalThis.Buffer ? globalThis.Buffer.from(msg.data) : msg.data, rinfo);
         };
 
         this._handle.onsend = (error) => {

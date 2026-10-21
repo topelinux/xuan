@@ -80,8 +80,11 @@ function uptime() {
     return Number.isFinite(n) ? n : 0;
 }
 
-const os = { cpus, totalmem, freemem, networkInterfaces, uptime };
+function homedir() { return tjs.homeDir; }
+function tmpdir() { return tjs.tmpDir; }
+const os = { cpus, totalmem, freemem, networkInterfaces, uptime, homedir, tmpdir };
 
 export { cpus, totalmem, freemem, uptime };
 export { networkInterfaces };
+export { homedir, tmpdir };
 export default os;

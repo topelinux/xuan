@@ -432,7 +432,7 @@ class ServerResponse extends EventEmitter {
             encoding = undefined;
         }
 
-        if (chunk !== undefined) {
+        if (chunk != null) {
             this.write(chunk, encoding);
         }
         if (this.finished) {
@@ -764,7 +764,7 @@ class ClientRequest extends EventEmitter {
             encoding = undefined;
         }
 
-        if (chunk !== undefined) {
+        if (chunk != null) {
             this.write(chunk, encoding);
         }
 

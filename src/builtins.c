@@ -51,6 +51,7 @@
 #include "bundles/c/stdlib/readline.c"
 #include "bundles/c/stdlib/serial.c"
 #include "bundles/c/stdlib/sqlite.c"
+#include "bundles/c/stdlib/node-sqlite.c"
 #include "bundles/c/stdlib/stream.c"
 #include "bundles/c/stdlib/string_decoder.c"
 #include "bundles/c/stdlib/tls.c"
@@ -107,6 +108,7 @@ static tjs_builtin_t builtins[] = {
     { "tjs:serial", tjs__serial, sizeof(tjs__serial) },
     { "tjs:zlib", tjs__zlib, sizeof(tjs__zlib) },
     { "tjs:sqlite", tjs__sqlite, sizeof(tjs__sqlite) },
+    { "tjs:node-sqlite", tjs__node_sqlite, sizeof(tjs__node_sqlite) },
     { "tjs:net", tjs__net, sizeof(tjs__net) },
     { "tjs:stream", tjs__stream, sizeof(tjs__stream) },
     { "tjs:string_decoder", tjs__string_decoder, sizeof(tjs__string_decoder) },
@@ -132,6 +134,7 @@ static const tjs_builtin_alias_t builtin_aliases[] = {
     { "node:buffer", "tjs:buffer" },
     { "node:child_process", "tjs:child_process" },
     { "node:crypto", "tjs:crypto" },
+    { "node:sqlite", "tjs:node-sqlite" },
     { "node:dgram", "tjs:dgram" },
     { "node:dns", "tjs:dns" },
     { "node:events", "tjs:events" },

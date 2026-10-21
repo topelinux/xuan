@@ -2203,7 +2203,48 @@ static const JSCFunctionListEntry tjs_stat_proto_funcs[] = {
     JS_PROP_STRING_DEF("[Symbol.toStringTag]", "StatResult", JS_PROP_C_W_E),
 };
 
+static JSValue tjs_fs_fsync_sync(JSContext *ctx, JSValue this_val, int argc, JSValue *argv) {
+    int32_t fd;
+    if (JS_ToInt32(ctx, &fd, argv[0])) return JS_EXCEPTION;
+    uv_fs_t req;
+    int r = uv_fs_fsync(NULL, &req, fd, NULL);
+    uv_fs_req_cleanup(&req);
+    if (r < 0) return tjs_throw_errno(ctx, r);
+    return JS_UNDEFINED;
+}
+
+static JSValue tjs_fs_chmod_sync(JSContext *ctx, JSValue this_val, int argc, JSValue *argv) {
+    const char *path = JS_ToCString(ctx, argv[0]);
+    if (!path) return JS_EXCEPTION;
+    int32_t mode;
+    if (JS_ToInt32(ctx, &mode, argv[1])) { JS_FreeCString(ctx, path); return JS_EXCEPTION; }
+    uv_fs_t req;
+    int r = uv_fs_chmod(NULL, &req, path, mode, NULL);
+    JS_FreeCString(ctx, path);
+    uv_fs_req_cleanup(&req);
+    if (r < 0) return tjs_throw_errno(ctx, r);
+    return JS_UNDEFINED;
+}
+
+static JSValue tjs_fs_mkdtemp_sync(JSContext *ctx, JSValue this_val, int argc, JSValue *argv) {
+    const char *prefix = JS_ToCString(ctx, argv[0]);
+    if (!prefix) return JS_EXCEPTION;
+    char *tpl = js_malloc(ctx, strlen(prefix) + 7);
+    if (!tpl) { JS_FreeCString(ctx, prefix); return JS_EXCEPTION; }
+    strcpy(tpl, prefix); strcat(tpl, "XXXXXX");
+    JS_FreeCString(ctx, prefix);
+    uv_fs_t req;
+    int r = uv_fs_mkdtemp(NULL, &req, tpl, NULL);
+    js_free(ctx, tpl);
+    JSValue result = r < 0 ? tjs_throw_errno(ctx, r) : JS_NewString(ctx, req.path);
+    uv_fs_req_cleanup(&req);
+    return result;
+}
+
 static const JSCFunctionListEntry tjs_fs_funcs[] = {
+    TJS_CFUNC_DEF("fsyncSync", 1, tjs_fs_fsync_sync),
+    TJS_CFUNC_DEF("chmodSync", 2, tjs_fs_chmod_sync),
+    TJS_CFUNC_DEF("mkdtempSync", 1, tjs_fs_mkdtemp_sync),
     TJS_UVCONST(FS_SYMLINK_DIR),
     TJS_UVCONST(FS_SYMLINK_JUNCTION),
     TJS_CFUNC_DEF("open", 3, tjs_fs_open),

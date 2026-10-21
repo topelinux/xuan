@@ -6,6 +6,7 @@
 #include "utils.h"
 
 #include <mbedtls/md.h>
+#include <mbedtls/aes.h>
 #include <string.h>
 
 static JSClassID tjs_hmac_class_id;
@@ -201,6 +202,31 @@ static const JSCFunctionListEntry tjs_hmac_proto_funcs[] = {
     TJS_CFUNC_DEF("digest", 0, tjs_hmac_digest),
 };
 
+/* AES primitive used by the synchronous Node cipher facade. Key expansion and
+ * encryption stay in mbedTLS rather than a JavaScript implementation. */
+static JSValue tjs_aes_encrypt_block(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    size_t key_len = 0, block_len = 0;
+    JSValue key_ref = JS_UNDEFINED, block_ref = JS_UNDEFINED;
+    uint8_t *key = tjs_get_bytes(ctx, argv[0], &key_len, &key_ref);
+    if (!key) return JS_ThrowTypeError(ctx, "Invalid AES key");
+    uint8_t *block = tjs_get_bytes(ctx, argv[1], &block_len, &block_ref);
+    if (!block || block_len != 16 || (key_len != 16 && key_len != 24 && key_len != 32)) {
+        JS_FreeValue(ctx, key_ref);
+        JS_FreeValue(ctx, block_ref);
+        return JS_ThrowTypeError(ctx, "Invalid AES key or block length");
+    }
+    mbedtls_aes_context aes;
+    uint8_t out[16];
+    mbedtls_aes_init(&aes);
+    int ret = mbedtls_aes_setkey_enc(&aes, key, key_len * 8);
+    if (ret == 0) ret = mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, block, out);
+    mbedtls_aes_free(&aes);
+    JS_FreeValue(ctx, key_ref);
+    JS_FreeValue(ctx, block_ref);
+    if (ret) return JS_ThrowInternalError(ctx, "AES encryption failed: %d", ret);
+    return JS_NewArrayBufferCopy(ctx, out, sizeof(out));
+}
+
 void tjs__mod_crypto_init(JSContext *ctx, JSValue ns) {
     JSRuntime *rt = JS_GetRuntime(ctx);
 
@@ -211,6 +237,7 @@ void tjs__mod_crypto_init(JSContext *ctx, JSValue ns) {
     JS_SetPropertyFunctionList(ctx, proto, tjs_hmac_proto_funcs, countof(tjs_hmac_proto_funcs));
 
     JSValue crypto = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, crypto, "aesEncryptBlock", JS_NewCFunction(ctx, tjs_aes_encrypt_block, "aesEncryptBlock", 2));
     JSValue ctor = JS_NewCFunction2(ctx, tjs_hmac_constructor, "Hmac", 2, JS_CFUNC_constructor, 0);
     JS_SetConstructor(ctx, ctor, proto);
     JS_SetClassProto(ctx, tjs_hmac_class_id, proto);

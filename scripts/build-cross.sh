@@ -109,6 +109,7 @@ Core selectors:
   TJS_TARGET_ARCH                 Target architecture: aarch64 | armv7 | armhf | mipsel | windows (default: aarch64)
   TJS_LINK_MODE                   Link mode: dynamic | static
                                   default: aarch64=dynamic, armv7=dynamic, armhf=dynamic, mipsel=static, windows=static
+  TJS_DISABLE_SQLITE3             Disable built-in SQLite (default: ON; set OFF to build node:sqlite)
 
 WASM/native module switches:
   TJS_WAMR_SIMD                   WAMR SIMD: ON | OFF | AUTO (default: OFF in this script)
@@ -678,7 +679,7 @@ cmake_args=(
 	-DCMAKE_BUILD_TYPE=Release
 	-DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN_FILE}"
 	-DTJS_LINK_MODE="${LINK_MODE}"
-	-DTJS_DISABLE_SQLITE3=ON
+	-DTJS_DISABLE_SQLITE3="${TJS_DISABLE_SQLITE3:-ON}"
 	-DBUILD_WITH_MIMALLOC="${BUILD_WITH_MIMALLOC}"
 	-DTJS_DISABLE_ADA_URL="${TJS_DISABLE_ADA_URL}"
 	-DTJS_DISABLE_PROMISE_TRACKER="${TJS_DISABLE_PROMISE_TRACKER}"

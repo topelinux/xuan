@@ -31,7 +31,7 @@ Legend: ✅ present · 🟡 partial (known gaps listed) · ❌ not available.
 | `assert` | ✅ | Adapted from zora.js's assertion library. |
 | `buffer` | ✅ | `Buffer` implemented in `mod_buffer`. |
 | `events` | ✅ | `EventEmitter`, `on`/`once`, max-listeners helpers. |
-| `fs` | ✅ | Broad callback + sync API. Known gap: `fs.rmSync(..., { recursive: true })` not supported yet. |
+| `fs` | ✅ | Broad callback + sync API, including descriptor `writeFileSync`, `fsyncSync`, `chmodSync`, `mkdtempSync` and recursive `rmSync`. |
 | `fs/promises` | ✅ | Main surface. `access()` is approximated via `stat()`; some exotic options unimplemented. |
 | `path` | ✅ | Includes `posix` / `win32`. |
 | `process` | ✅ | Also installed as the `process` global. |
@@ -49,10 +49,11 @@ Legend: ✅ present · 🟡 partial (known gaps listed) · ❌ not available.
 | `tty` | ✅ | `isatty`, read/write streams. |
 | `wasi` | ✅ | WASI preview support. |
 | `child_process` | 🟡 | `spawn`, `spawnSync`, `exec`, `execSync`. Missing: `execFile`, `fork`. |
-| `crypto` | 🟡 | Hashing (`createHash`), HMAC (`createHmac`), `randomBytes`/`randomFill(Sync)`, `timingSafeEqual`, `getHashes`. Missing: ciphers, `createSign`/`createVerify`, key generation. `randomUUID` is available via the Web Crypto global. |
+| `crypto` | 🟡 | Hashing, HMAC, random bytes, `timingSafeEqual`, `getHashes`; synchronous `createCipheriv` for AES-128/192/256 ECB/CTR with `update`, `final`, `setAutoPadding`. AES uses mbedTLS. Cipher streams, decipher, authenticated modes, signatures and key generation remain unsupported. |
+| `node:sqlite` | 🟡 | `DatabaseSync` (`exec`, `prepare`, `close`), positional `StatementSync.run/get/all`; `run` returns `changes` and `lastInsertRowid`. Built with `TJS_DISABLE_SQLITE3=OFF`. No async Database, named parameter options, iterator or BigInt result mode. Legacy `tjs:sqlite` stays unchanged. |
 | `dns` | 🟡 | Started as a minimal shim so `@grpc/grpc-js` can `require('dns')`; `lookup` and `Resolver.resolve4`/`resolve6` are real (via `getaddrinfo`). `resolveTxt` is **not implemented** and throws `ERR_NOT_IMPLEMENTED` — it never returns an empty result, so it can't be mistaken for a successful lookup (Node would return records, or `ENODATA`/`ENOTFOUND`). |
 | `http2` | 🟡 | **Client only.** `createServer()` / `createSecureServer()` throw `not implemented`. Only present when built with HTTP/2. |
-| `os` | 🟡 | `cpus`, `freemem`, `totalmem`, `uptime`, `networkInterfaces`. Missing: `hostname`, `platform`, `arch`, `release`, `type`, `homedir`, `tmpdir`, `loadavg`, `endianness`, `userInfo`, `constants` (some equivalents live on `process`). |
+| `os` | 🟡 | `cpus`, `freemem`, `totalmem`, `uptime`, `networkInterfaces`, `homedir`, `tmpdir`. Missing: `hostname`, `platform`, `arch`, `release`, `type`, `loadavg`, `endianness`, `userInfo`, `constants` (some equivalents live on `process`). |
 | `zlib` | 🟡 | `gunzip`/`gzip` paths present. `deflateRaw` / `inflateRaw` throw `zlib is not supported in this build`. |
 
 ### Non-Node built-in modules
