@@ -4,6 +4,7 @@ const CHUNK_SIZE = 16640;
 
 const kHandle = Symbol('kHandle');
 const kType = Symbol('kType');
+const kEmitter = Symbol('kEmitter');
 
 function silentClose(handle) {
     try {
@@ -87,6 +88,7 @@ class StdioReadableStream extends ReadableStream {
 
         this[kHandle] = handle;
         this[kType] = type;
+        this[kEmitter] = new core.events.EventEmitter();
     }
 
     get isTerminal() {
@@ -105,6 +107,47 @@ class StdioReadableStream extends ReadableStream {
         const ttyMode = rawMode ? core.TTY_MODE_RAW : core.TTY_MODE_NORMAL;
 
         this[kHandle].setMode(ttyMode);
+    }
+
+    // Minimal EventEmitter surface so Node-style code such as
+    // `process.stdin.on('end', ...)` works. 'end' is emitted by the
+    // readline Interface when it consumes the stream to EOF.
+    on(event, listener) {
+        this[kEmitter].on(event, listener);
+
+        return this;
+    }
+
+    addListener(event, listener) {
+        return this.on(event, listener);
+    }
+
+    once(event, listener) {
+        this[kEmitter].once(event, listener);
+
+        return this;
+    }
+
+    off(event, listener) {
+        this[kEmitter].off(event, listener);
+
+        return this;
+    }
+
+    removeListener(event, listener) {
+        return this.off(event, listener);
+    }
+
+    emit(event, ...args) {
+        return this[kEmitter].emit(event, ...args);
+    }
+
+    listeners(event) {
+        return this[kEmitter].listeners(event);
+    }
+
+    listenerCount(event) {
+        return this[kEmitter].listenerCount(event);
     }
 }
 
