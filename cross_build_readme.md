@@ -116,3 +116,51 @@ These existing commands still work, and now call `build-cross.sh` internally:
 
 - `./scripts/build-aarch64.sh`
 - `./scripts/build-mips-static.sh`
+
+## armhf targets with an older musl
+
+armhf builds are linked against musl 1.2.5, which uses the time64 ABI and
+exports `pthread_getname_np`. On a target with an older musl (for example
+Alpine 3.12 / musl 1.1.24) the binary fails at load time:
+
+```
+Error relocating .../libuv.so.1: __clock_gettime64: symbol not found
+Error relocating .../libuv.so.1: __stat_time64: symbol not found
+...
+```
+
+The fix is to install a newer musl on the target rather than adding time64
+stubs to the build:
+
+```bash
+./scripts/build-musl-armhf.sh     # -> build-armhf-musl/ld-musl-armhf.so.1
+
+scp build-armhf-musl/ld-musl-armhf.so.1 root@192.168.1.1:/tmp/
+ssh root@192.168.1.1
+    cp -p /lib/ld-musl-armhf.so.1 /lib/ld-musl-armhf.so.1.orig
+    cp /tmp/ld-musl-armhf.so.1 /lib/ld-musl-armhf.so.1
+    sync
+```
+
+To try it in `/tmp` before touching the system, invoke the new loader
+explicitly. musl's `libc.so` *is* the dynamic loader, so `LD_LIBRARY_PATH`
+alone cannot replace it:
+
+```bash
+scp build-armhf-musl/ld-musl-armhf.so.1 root@192.168.1.1:/tmp/
+ssh root@192.168.1.1
+    /tmp/ld-musl-armhf.so.1 --library-path /tmp/lib ./bin/xuan --version
+```
+
+The helper script also works around two build/runtime quirks:
+
+- vendor 4.9 kernels that stub the `statx` syscall with `EINVAL` (musl only
+  falls back to `fstatat64` on `ENOSYS`, so `stat()` would fail on the whole
+  system otherwise)
+- zig's compiler-rt weak hidden `memcpy`/`memmove`/`memset`/`memcmp`,
+  math functions and `__stack_chk_guard`, which would otherwise hide musl's
+  own definitions in the linked `libc.so`
+
+armhf no longer links `libtime64_stub.so`. `TJS_TIME64_STUB_LIB` remains
+available for armv7 builds.
+
