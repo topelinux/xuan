@@ -1155,3 +1155,17 @@ index 766410b16..2a45ce412 100644
  	/* there's an ongoing query we can share the result of? */
  
  	q = lws_adns_get_query(dns, qtype, 0, name);
+diff --git a/lib/roles/mqtt/mqtt.c b/lib/roles/mqtt/mqtt.c
+--- a/lib/roles/mqtt/mqtt.c
++++ b/lib/roles/mqtt/mqtt.c
+@@ -899,6 +899,10 @@
+ 			buf += pub->topic_len;
+ 			len -= pub->topic_len;
+ 
++			/* Preserve delivery flags for the MQTT client callback. */
++			pub->retain = !!(par->packet_type_flags & 0x01);
++			pub->dup = !!(par->packet_type_flags & 0x08);
++
+ 			/* Extract QoS Level from Fixed Header Flags */
+ 			pub->qos = (lws_mqtt_qos_levels_t)
+ 					((par->packet_type_flags >> 1) & 0x3);
