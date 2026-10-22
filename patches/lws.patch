@@ -1169,3 +1169,27 @@ diff --git a/lib/roles/mqtt/mqtt.c b/lib/roles/mqtt/mqtt.c
  			/* Extract QoS Level from Fixed Header Flags */
  			pub->qos = (lws_mqtt_qos_levels_t)
  					((par->packet_type_flags >> 1) & 0x3);
+diff --git a/lib/roles/http/client/client-http.c b/lib/roles/http/client/client-http.c
+--- a/lib/roles/http/client/client-http.c
++++ b/lib/roles/http/client/client-http.c
+@@ -1070,13 +1070,13 @@
+ 	n = atoi(p);
+ 
+ #if defined(LWS_WITH_HTTP_DIGEST_AUTH) && defined(LWS_WITH_TLS)
+-	if (n == 401 && lws_hdr_simple_ptr(wsi, WSI_TOKEN_HTTP_WWW_AUTHENTICATE)) {
+-		if (!(wsi->stash && wsi->stash->cis[CIS_USERNAME] &&
+-                		    wsi->stash->cis[CIS_PASSWORD])) {
+-			lwsl_err("Digest auth requested by server but no credentials provided by user\n");
+-			
+-			return LCBA_FAILED_AUTH;
+-		}
++	/* A 401 challenge is an HTTP response, not a transport failure.
++	 * Only enter automatic Digest negotiation when the server requests
++	 * Digest and the caller explicitly supplied credentials for it. */
++	p = lws_hdr_simple_ptr(wsi, WSI_TOKEN_HTTP_WWW_AUTHENTICATE);
++	if (n == 401 && p && !strncasecmp(p, "Digest ", 7) &&
++	    wsi->stash && wsi->stash->cis[CIS_USERNAME] &&
++	    wsi->stash->cis[CIS_PASSWORD]) {
+ 
+ 		if (lws_http_digest_auth(wsi))
+ 			goto bail3;
