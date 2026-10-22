@@ -1,0 +1,16 @@
+import assert, { strictEqual, notStrictEqual } from 'node:assert';
+assert(true);
+assert.throws(() => assert(false));
+strictEqual(1, 1);
+strictEqual(NaN, NaN);
+notStrictEqual(1, '1');
+notStrictEqual(-0, 0);
+assert.throws(() => strictEqual(1, '1'));
+assert.throws(() => strictEqual(-0, 0));
+assert.throws(() => notStrictEqual(NaN, NaN));
+assert.strictEqual(typeof assert, 'function');
+assert.strictEqual(assert.strictEqual, strictEqual);
+assert.strictEqual(assert.notStrictEqual, notStrictEqual);
+assert.ok(true);
+assert.throws(() => assert.throws(() => {}));
+console.log('assert: callable default, detached strict equality, NaN/signed zero and rejection passed');

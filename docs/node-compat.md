@@ -28,7 +28,7 @@ Legend: ✅ present · 🟡 partial (known gaps listed) · ❌ not available.
 
 | Module | Status | Notes / known gaps |
 |--------|:------:|--------------------|
-| `assert` | ✅ | Adapted from zora.js's assertion library. |
+| `assert` | ✅ | Adapted from zora.js's assertion library. The default export is callable like Node and also carries the assertion methods, including `strictEqual` / `notStrictEqual`. |
 | `buffer` | ✅ | `Buffer` implemented in `mod_buffer`. |
 | `events` | ✅ | `EventEmitter`, `on`/`once`, max-listeners helpers. |
 | `fs` | ✅ | Broad callback + sync API, including descriptor `writeFileSync`, `fsyncSync`, `chmodSync`, `mkdtempSync` and recursive `rmSync`. |

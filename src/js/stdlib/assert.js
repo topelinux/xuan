@@ -184,4 +184,15 @@ const AssertPrototype = {
 };
 
 
-export default Object.create(AssertPrototype);
+// Node's default assert export is callable. Keep the existing tjs assertion
+// methods while supporting the strict scalar assertions used by Node callers.
+const strictEqual = assertMethodHook((actual, expected, description = 'should be strictly equal') => ({
+    pass: Object.is(actual, expected), actual, expected, description, operator: 'strictEqual'
+}));
+const notStrictEqual = assertMethodHook((actual, expected, description = 'should not be strictly equal') => ({
+    pass: !Object.is(actual, expected), actual, expected, description, operator: 'notStrictEqual'
+}));
+function assert(value, description) { return AssertPrototype.ok(value, description); }
+Object.assign(assert, AssertPrototype, { strictEqual, notStrictEqual });
+export { strictEqual, notStrictEqual };
+export default assert;
