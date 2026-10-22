@@ -318,6 +318,16 @@ class Cipheriv {
     }
 }
 function createCipheriv(algorithm, key, iv) { return new Cipheriv(algorithm, key, iv); }
+// CTR decryption uses the same AES encryption keystream/XOR as encryption.
+// Do not expose this as ECB decryption: that requires the inverse block cipher
+// and different padding handling, which this facade does not yet implement.
+function createDecipheriv(algorithm, key, iv) {
+    if (!/^aes-(128|192|256)-ctr$/.test(String(algorithm).toLowerCase())) {
+        throw new TypeError('Unsupported decipher: ' + algorithm);
+    }
+    return new Cipheriv(algorithm, key, iv);
+}
 
-export { createHash, createHmac, getHashes, randomBytes, randomFillSync, randomFill, timingSafeEqual, createCipheriv };
-export default { createHash, createHmac, getHashes, randomBytes, randomFillSync, randomFill, timingSafeEqual, createCipheriv };
+
+export { createHash, createHmac, getHashes, randomBytes, randomFillSync, randomFill, timingSafeEqual, createCipheriv, createDecipheriv };
+export default { createHash, createHmac, getHashes, randomBytes, randomFillSync, randomFill, timingSafeEqual, createCipheriv, createDecipheriv };
